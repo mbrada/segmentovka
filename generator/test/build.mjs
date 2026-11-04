@@ -24,9 +24,19 @@ function stl(mesh) {
   }
   return Buffer.from(buf);
 }
-for (const [k, m] of Object.entries(R)) {
-  const mesh = k === 'lid' ? lidToPrint(m, L) : m;
-  console.log(`${k}: tri ${m.tri.length / 3}, objem ${(m.volume / 1000).toFixed(1)} cm3, genus ${m.genus}, status ${m.status}`);
-  writeFileSync(`${out}/${k}.stl`, stl(mesh));
+const save = (name, m, isLid) => {
+  console.log(`${name}: tri ${m.tri.length / 3}, objem ${(m.volume / 1000).toFixed(1)} cm3, genus ${m.genus}, status ${m.status}`);
+  writeFileSync(`${out}/${name}.stl`, stl(isLid ? lidToPrint(m, L) : m));
+};
+for (const [k, m] of Object.entries(R)) if (k !== 'pieces') save(k, m, k === 'lid');
+if (R.pieces) {
+  const s = L.split;
+  console.log(`díly: ${s.nx} × ${s.ny}, řezy x ${s.cols.map((v) => v.toFixed(0)).join('/')}, y ${s.rows.map((v) => v.toFixed(0)).join('/')}`);
+  for (const J of s.joints) console.log(`  spoj ${J.dir} ${J.a + 1}|${J.b + 1} na ${J.at.toFixed(0)}: ${J.spots.map((q) => `${q.type}@${q.s.toFixed(0)}`).join(' ')} vodiče@${J.notches.map((v) => v.toFixed(0)).join(',')}`);
+  for (const q of R.pieces) {
+    save(`pouzdro_${q.k}`, q.case, false);
+    if (q.diffuser) save(`difuzor_${q.k}`, q.diffuser, false);
+    if (q.lid) save(`krabicka_${q.k}`, q.lid, true);
+  }
 }
 writeFileSync(`${out}/ledmap.txt`, ledMap(L));

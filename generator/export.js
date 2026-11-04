@@ -54,25 +54,27 @@ function meshXml(mesh) {
   return out.join('\n');
 }
 
-// parts: [{name, mesh}] tvoří jeden objekt (díly), extra: [{name, mesh, offset:[x,y,z]}] samostatné objekty.
-export function threeMF({ title, parts, extra = [] }) {
+// groups: [{name, parts: [{name, mesh}], offset: [x,y,z]}] – každá skupina je jeden objekt
+// na podložce; má-li víc dílů (pouzdro + difuzory), jsou to díly jednoho objektu (tisk s AMS).
+export function threeMF({ title, groups }) {
   const res = [];
   const items = [];
   let id = 1;
-  const partIds = [];
-  for (const p of parts) {
-    res.push(`<object id="${id}" type="model" name="${esc(p.name)}">${meshXml(p.mesh)}</object>`);
-    partIds.push(id++);
-  }
-  if (partIds.length === 1) items.push(`<item objectid="${partIds[0]}"/>`);
-  else if (partIds.length > 1) {
-    res.push(`<object id="${id}" type="model" name="${esc(title)}"><components>${partIds.map((i) => `<component objectid="${i}"/>`).join('')}</components></object>`);
-    items.push(`<item objectid="${id++}"/>`);
-  }
-  for (const e of extra) {
-    res.push(`<object id="${id}" type="model" name="${esc(e.name)}">${meshXml(e.mesh)}</object>`);
-    const [x, y, z] = e.offset || [0, 0, 0];
-    items.push(`<item objectid="${id++}" transform="1 0 0 0 1 0 0 0 1 ${num(x)} ${num(y)} ${num(z)}"/>`);
+  for (const g of groups) {
+    const parts = g.parts.filter((q) => q && q.mesh);
+    if (!parts.length) continue;
+    const partIds = [];
+    for (const p of parts) {
+      res.push(`<object id="${id}" type="model" name="${esc(p.name)}">${meshXml(p.mesh)}</object>`);
+      partIds.push(id++);
+    }
+    let itemId = partIds[0];
+    if (partIds.length > 1) {
+      res.push(`<object id="${id}" type="model" name="${esc(g.name)}"><components>${partIds.map((i) => `<component objectid="${i}"/>`).join('')}</components></object>`);
+      itemId = id++;
+    }
+    const [x, y, z] = g.offset || [0, 0, 0];
+    items.push(`<item objectid="${itemId}"${x || y || z ? ` transform="1 0 0 0 1 0 0 0 1 ${num(x)} ${num(y)} ${num(z)}"` : ''}/>`);
   }
   const model = `<?xml version="1.0" encoding="UTF-8"?>
 <model unit="millimeter" xml:lang="cs-CZ" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">

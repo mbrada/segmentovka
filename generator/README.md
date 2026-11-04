@@ -14,11 +14,17 @@ Běží na https://segmentovka.miloslavbrada.cz
 - výstupy: pouzdro (tisk čelem dolů), difuzory do 1mm vybrání, zadní krabička se sloupky,
   otvorem pro kabel a otvory na zavěšení; 3MF má pouzdro a difuzory jako dva díly jednoho
   objektu (tisk s AMS), mapa LED pro firmware
+- dělení na díly (`split.js`): když se pouzdro nevejde na tiskovou plochu, rozdělí se rovnými
+  řezy, které nevedou přes lůžka LED a co nejméně přes světlovody; na spoji mají díly stěny
+  s rybinovými zámky (zasunou se zezadu) a/nebo šrouby M3 s maticí, ve stěnách jsou výřezy pro
+  vodiče otevřené dozadu; kde u čela není místo, jsou zámky a šrouby jen v zadní části stěny
+  se sraženou spodní hranou; stejně se dělí i krabička
 
 ## Soubory
 
 - `gen.js` – rozložení a 3D geometrie (CSG přes manifold-3d), sdílené prohlížečem i Node
 - `symbols.js` – šablonové písmo symbolů (tahy, bez ostrůvků)
+- `split.js` – volba řezů a rozmístění zámků, šroubů a výřezů pro vodiče na spojích
 - `export.js` – binární STL, 3MF, ZIP (deflate přes CompressionStream)
 - `worker.js` – výpočet ve Web Workeru
 - `page.html` – stránka (obsah ve tvaru pro Claude Artifact, bez `<head>`)
@@ -36,4 +42,4 @@ ES moduly a WASM potřebují HTTP, z `file://` stránka nepoběží.
 
     node test/build.mjs /tmp/out '{"layout":"-8:8:8","slant":8}'   # STL + statistika (manifold, objem)
     node test/export.mjs /tmp/out                                  # ZIP a 3MF
-    node test/genus.mjs                                            # světlovody průchozí ve všech stylech
+    node test/genus.mjs                                            # světlovody, ostrůvky, dělení na díly

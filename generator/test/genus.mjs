@@ -12,20 +12,54 @@ const M = await Module();
 M.setup();
 let bad = 0;
 
-function check(params) {
-  const L = computeLayout(params);
-  const R = buildModels(M, L);
-  const whole = new M.Manifold(new M.Mesh({ numProp: 3, vertProperties: R.case.vert, triVerts: R.case.tri }));
+// rozklad sítě na souvislé části: hlavní těleso, ostrůvky (kladný objem), bublinky (záporný)
+function topo(mesh) {
+  const whole = new M.Manifold(new M.Mesh({ numProp: 3, vertProperties: mesh.vert, triVerts: mesh.tri }));
   const parts = whole.decompose().sort((a, b) => b.volume() - a.volume());
-  const genus = parts[0].genus();
-  const islands = parts.slice(1).filter((q) => q.volume() > 0.01);
-  const voids = parts.slice(1).filter((q) => q.volume() < 0).reduce((s, q) => s - q.volume(), 0);
-  const hasSym = L.els.some((e) => e.kind === 'sym');
-  const ok = R.case.status === 'NoError' && !islands.length && (hasSym || genus === L.els.length);
+  const r = {
+    genus: parts[0].genus(),
+    islands: parts.slice(1).filter((q) => q.volume() > 0.01).length,
+    voids: parts.slice(1).filter((q) => q.volume() < 0).reduce((s, q) => s - q.volume(), 0),
+  };
   for (const q of parts) q.delete();
   whole.delete();
+  return r;
+}
+
+// topologie celého pouzdra (dělení vypnuté velkou tiskovou plochou)
+function check(params) {
+  const L = computeLayout({ bedW: 2000, bedH: 2000, ...params });
+  const R = buildModels(M, L);
+  const { genus, islands, voids } = topo(R.case);
+  const hasSym = L.els.some((e) => e.kind === 'sym');
+  const ok = R.case.status === 'NoError' && !islands && (hasSym || genus === L.els.length);
   if (!ok) bad++;
-  return `${hasSym ? '' : `${genus}/${L.els.length}`}${islands.length ? ` OSTRŮVKY ${islands.length}` : ''}${voids ? ` (bublinky ${voids.toFixed(2)} mm³)` : ''}${ok ? ' ok' : ' !!'}`;
+  return `${hasSym ? '' : `${genus}/${L.els.length}`}${islands ? ` OSTRŮVKY ${islands}` : ''}${voids ? ` (bublinky ${voids.toFixed(2)} mm³)` : ''}${ok ? ' ok' : ' !!'}`;
+}
+
+// dělení na díly: každý díl platný, bez ostrůvků, vejde se na plochu; spoje mají prvky
+function checkSplit(params) {
+  const L = computeLayout(params);
+  const R = buildModels(M, L);
+  const s = L.split;
+  const [U, V] = s.bed;
+  const msgs = [];
+  let ok = !!R.pieces && R.pieces.length === s.n;
+  for (const q of R.pieces || []) {
+    for (const [name, mesh] of [['pouzdro', q.case], ['krabička', q.lid]]) {
+      if (!mesh) continue;
+      const t = topo(mesh);
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (let i = 0; i < mesh.vert.length; i += 3) { x0 = Math.min(x0, mesh.vert[i]); x1 = Math.max(x1, mesh.vert[i]); y0 = Math.min(y0, mesh.vert[i + 1]); y1 = Math.max(y1, mesh.vert[i + 1]); }
+      const w = x1 - x0, h = y1 - y0;
+      // pera rybin přesahují do souseda o pár mm – tolerance 10 mm
+      const fits = (w <= U + 10 && h <= V + 10) || (w <= V + 10 && h <= U + 10);
+      if (mesh.status !== 'NoError' || t.islands || !fits) { ok = false; msgs.push(`${name} ${q.k}: ${mesh.status}, ostrůvky ${t.islands}, ${w.toFixed(0)}×${h.toFixed(0)}`); }
+    }
+  }
+  const noSpots = s.joints.filter((J) => !J.spots.length).length;
+  if (!ok) bad++;
+  return `${s.nx}×${s.ny} dílů, spojů ${s.joints.length} (bez šroubů/zámků ${noSpots})${msgs.length ? ' ' + msgs.join('; ') : ''}${ok ? ' ok' : ' !!'}`;
 }
 
 for (const layout of ['88:88', '8.8', '-8', '8°', '188', '-88.8°', '88:88:88']) {
@@ -35,5 +69,16 @@ for (const layout of ['88:88', '8.8', '-8', '8°', '188', '-88.8°', '88:88:88']
 for (const sym of SYMBOL_PRESETS) {
   console.log(`[${sym}]`.padEnd(9), `8[${sym}] ${check({ layout: `8[${sym}]` })}`, `  sklon 8°: ${check({ layout: `8[${sym}]`, slant: 8 })}`);
 }
+const big = { digitH: 300, digitW: 140, segW: 30, gap: 8, colonW: 50, dotSize: 28, margin: 15 };
+for (const [name, pr] of [
+  ['88:88 obří', { layout: '88:88', ...big }],
+  ['88:88 obří, šikmé', { layout: '88:88', ...big, segStyle: 'bevel' }],
+  ['88:88 obří, sklon', { layout: '88:88', ...big, slant: 8 }],
+  ['8 číslic', { layout: '88888888' }],
+  ['88:88:88 velké', { layout: '88:88:88', digitH: 200, digitW: 90, segW: 20 }],
+  ['88:88 na A1 mini', { layout: '88:88', bedW: 180, bedH: 180 }],
+  ['-88.8[°C] velké', { layout: '-88.8[°C]', digitH: 200, digitW: 90, segW: 20, symH: 40, symStroke: 4 }],
+  ['88:88 jen šrouby', { layout: '88:88', ...big, joinType: 'screws' }],
+]) console.log(name.padEnd(20), checkSplit(pr));
 console.log(bad ? `CHYBA: ${bad} kombinací` : 'OK');
 process.exitCode = bad ? 1 : 0;

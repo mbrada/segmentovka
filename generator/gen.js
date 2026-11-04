@@ -8,6 +8,7 @@
 // Výchozí hodnoty odpovídají původnímu Case.3mf (7-Segment Uhr v38, 88:88).
 
 import { layoutSymbol, strokePolygons, convexHull } from './symbols.js';
+import { computeSplit, jointPoint, JOINT } from './split.js';
 
 export const DEFAULTS = {
   layout: '88:88',
@@ -30,6 +31,9 @@ export const DEFAULTS = {
   // zadní víko (krabička)
   lid: true, lidDepth: 30, lidWall: 2, lidPlate: 3, lidScrewD: 3.4, lidHeadD: 6.5,
   lidClamp: 3, usb: 'right', usbW: 12, usbH: 7, keyholes: true,
+  // dělení na díly podle tiskové plochy
+  splitMode: 'auto', bedW: 256, bedH: 256, joinType: 'both', jointWall: 2.5, joinClear: 0.15,
+  notchW: 14, notchH: 12,
   // zapojení
   segOrder: 'abcdefg',
   quality: 40,
@@ -374,7 +378,25 @@ export function computeLayout(params) {
   if (z.tubeEnd < p.front + 3) warnings.push('Pouzdro je na tyto rozměry lůžka příliš mělké – zvětšete hloubku.');
   if (!els.length) warnings.push('Rozložení neobsahuje žádný segment.');
 
-  return { p, cells, els, posts, caseW, caseH, offX, offY, warnings, z, rOut, minD };
+  // dělení na díly (když se pouzdro nevejde na tiskovou plochu)
+  const outer = els.map((e) => offsetConvex(e.poly, (e.kind === 'sym' ? 0 : -p.recessInset) + p.tubeWall + 0.5));
+  const split = computeSplit(p, { W: caseW, H: caseH, els, outer, posts, rOut, keyholes: [] }, warnings);
+  // otvory na zavěšení: po jednom uprostřed každého horního dílu, jinak ve čtvrtinách šířky
+  let keyholes = [];
+  if (p.keyholes && caseW > 60) {
+    const xs = split.n > 1
+      ? split.pieces.filter((q) => q.j === split.ny - 1 && q.r[2] - q.r[0] >= 60).map((q) => (q.r[0] + q.r[2]) / 2)
+      : [caseW * 0.25, caseW * 0.75];
+    keyholes = xs.map((kx) => [kx, caseH - 26]);
+  }
+  // otvor pro kabel dole: uprostřed spodního dílu nejblíž 30 % šířky
+  let usbX = caseW * 0.3;
+  if (split.n > 1) {
+    const bottom = split.pieces.filter((q) => q.j === 0).map((q) => (q.r[0] + q.r[2]) / 2);
+    usbX = bottom.reduce((a, b) => (Math.abs(b - caseW * 0.3) < Math.abs(a - caseW * 0.3) ? b : a), bottom[0]);
+  }
+
+  return { p, cells, els, posts, caseW, caseH, offX, offY, warnings, z, rOut, minD, split, keyholes, usbX };
 }
 
 export function zStack(p) {
@@ -475,10 +497,13 @@ export function buildModels(M, L, opts = {}) {
     }
 
     const body = T(Manifold.union(adds));
-    const caseM = T(body.subtract(T(Manifold.union(cuts))));
-    result.case = meshOut(caseM);
+    const cutsU = T(Manifold.union(cuts));
+    const caseM = T(body.subtract(cutsU));
+    const split = L.split && L.split.n > 1 ? L.split : null;
+    if (!split) result.case = meshOut(caseM);
 
     // --- difuzory ---
+    let diffM = null;
     if (p.diffuser && p.recessDepth > 0) {
       const parts = L.els.map((e) => {
         if (e.kind === 'sym') {
@@ -493,10 +518,14 @@ export function buildModels(M, L, opts = {}) {
         const poly = offsetConvex(e.poly.map(mx), -p.diffClear);
         return hull(ring(poly, 0), ring(poly, p.diffT));
       });
-      if (parts.length) result.diffuser = meshOut(T(Manifold.union(parts)));
+      if (parts.length) {
+        diffM = T(Manifold.union(parts));
+        result.diffuser = meshOut(diffM);
+      }
     }
 
     // --- zadní krabička (sestavená poloha: z od depth do depth+lidDepth) ---
+    let lidM = null, lidCutsU = null;
     if (p.lid) {
       const z0 = p.depth, z1 = p.depth + p.lidDepth, lw = p.lidWall;
       const ladds = [T(box(0, 0, z0, W, H, z1).subtract(box(lw, lw, z0 - 1, W - lw, H - lw, z1 - p.lidPlate)))];
@@ -515,21 +544,126 @@ export function buildModels(M, L, opts = {}) {
         if (p.usb === 'right') lcuts.push(box(-1, H / 2 - hw, zc - hh, lw + 1, H / 2 + hw, zc + hh));
         else if (p.usb === 'left') lcuts.push(box(W - lw - 1, H / 2 - hw, zc - hh, W + 1, H / 2 + hw, zc + hh));
         else if (p.usb === 'bottom') {
-          const xc = W - W * 0.3; // v čelním pohledu vlevo dole od středu
+          const xc = W - L.usbX; // v čelním pohledu vlevo dole od středu
           lcuts.push(box(xc - hw, -1, zc - hh, xc + hw, lw + 1, zc + hh));
         }
       }
       // otvory na zavěšení (klíčová dírka)
-      if (p.keyholes && W > 60) {
-        for (const fx of [0.25, 0.75]) {
-          const c = [W * fx, H - 26];
-          lcuts.push(cyl(c, 4.2, 4.2, z1 - p.lidPlate - 1, z1 + 1, 32));
-          lcuts.push(hull(ring(rect([c[0], c[1] + 5], [0, 1], 10, 4.4), z1 - p.lidPlate - 1), ring(rect([c[0], c[1] + 5], [0, 1], 10, 4.4), z1 + 1)));
-          lcuts.push(cyl([c[0], c[1] + 10], 2.2, 2.2, z1 - p.lidPlate - 1, z1 + 1, 24));
-        }
+      for (const kh of L.keyholes || []) {
+        const c = mx(kh);
+        lcuts.push(cyl(c, 4.2, 4.2, z1 - p.lidPlate - 1, z1 + 1, 32));
+        lcuts.push(hull(ring(rect([c[0], c[1] + 5], [0, 1], 10, 4.4), z1 - p.lidPlate - 1), ring(rect([c[0], c[1] + 5], [0, 1], 10, 4.4), z1 + 1)));
+        lcuts.push(cyl([c[0], c[1] + 10], 2.2, 2.2, z1 - p.lidPlate - 1, z1 + 1, 24));
       }
-      const lidM = T(T(Manifold.union(ladds)).subtract(T(Manifold.union(lcuts))));
-      result.lid = meshOut(lidM);
+      lidCutsU = T(Manifold.union(lcuts));
+      lidM = T(T(Manifold.union(ladds)).subtract(lidCutsU));
+      if (!split) result.lid = meshOut(lidM);
+    }
+
+    // --- díly (když se pouzdro nevejde na tiskovou plochu) ---
+    if (split) {
+      const jw = p.jointWall, { padT, padW, dove } = JOINT;
+      const z0 = p.depth, z1 = p.depth + p.lidDepth;
+      const zone = {
+        case: { za: 0, zb: p.depth, zf: p.front, zs: p.front + (p.depth - p.front) / 2, tongue: [p.front, p.depth], groove: [p.front, p.depth + 1], notch: [p.depth - p.notchH, p.depth + 1] },
+        lid: { za: z0, zb: z1, zs: z0 + (p.lidDepth - p.lidPlate) / 2, tongue: [z0, z1 - p.lidPlate], groove: [z0 - 1, z1 - p.lidPlate], notch: [z0 - 1, z0 + p.notchH] },
+      };
+      // hranol z obdélníku/polygonu ve spojových souřadnicích (n, t)
+      const prismNT = (J, nt, za, zb) => {
+        const pts = nt.map(([n, t]) => mx(jointPoint(J, n, t)));
+        return hull(ring(pts, za), ring(pts, zb));
+      };
+      const rectNT = (n0, n1, t0, t1) => [[n0, t0], [n1, t0], [n1, t1], [n0, t1]];
+      // vůle lůžek: spojová stěna se nesmí dotknout pružného kroužku
+      const sockClear = L.els.length
+        ? T(Manifold.union(L.els.map((e) => cyl(mx(e.c), rOut + 0.4, rOut + 0.4, z.tubeEnd - 0.5, p.depth + 1))))
+        : null;
+      const features = (q, zn) => {
+        const Z = zone[zn];
+        const fadds = [], fcuts = [];
+        for (const J of split.joints) {
+          const side = J.a === q.k - 1 ? 'a' : J.b === q.k - 1 ? 'b' : null;
+          if (!side) continue;
+          const nIn = (d) => (side === 'a' ? [-d, 0] : [0, d]);
+          // spojová stěna po celé délce spoje
+          fadds.push(prismNT(J, rectNT(...nIn(jw), J.from, J.to), Z.za, Z.zb));
+          // zadní zóna: prvky jen za světlovody, spodní hrany sražené pod 45° (tisk bez podpor)
+          const back = (sp) => zn === 'case' && sp.zone === 'back';
+          const zbk = z.tubeEnd + 1;
+          const chamfered = (J2, wallNT, fullNT, zTop, drop) => {
+            const wp = wallNT.map(([n, t]) => mx(jointPoint(J2, n, t)));
+            const fp = fullNT.map(([n, t]) => mx(jointPoint(J2, n, t)));
+            return hull(ring(wp, zTop - drop), ring(fp, zTop), ring(fp, Z.zb));
+          };
+          for (const sp of J.spots) {
+            const s = sp.s;
+            const trap = [[0, s - dove.bw / 2], [dove.td, s - dove.tw / 2], [dove.td, s + dove.tw / 2], [0, s + dove.bw / 2]];
+            if (sp.type === 'screw') {
+              const zs = back(sp) ? (zbk + p.depth) / 2 : Z.zs;
+              const padNT = rectNT(...nIn(jw + padT), s - padW / 2, s + padW / 2);
+              if (back(sp)) fadds.push(chamfered(J, rectNT(...nIn(jw), s - padW / 2, s + padW / 2), padNT, zbk, padT));
+              else {
+                const [pz0, pz1] = zn === 'case' ? [Z.zf, zs + 5] : [zs - 5, Z.zb];
+                fadds.push(prismNT(J, padNT, pz0, pz1));
+              }
+              const hp = [];
+              for (let i = 0; i < 16; i++) {
+                const a = (i / 16) * Math.PI * 2, t = s + 1.7 * Math.cos(a), zz = zs + 1.7 * Math.sin(a);
+                for (const n of [-(jw + padT + 1), jw + padT + 1]) hp.push([...mx(jointPoint(J, n, t)), zz]);
+              }
+              fcuts.push(T(Manifold.hull(hp)));
+            } else if (side === 'a') {
+              // pero rybiny vyčnívá do sousedního dílu
+              const [tz0, tz1] = back(sp) ? [zbk, Z.zb] : Z.tongue;
+              fadds.push(prismNT(J, rectNT(-jw, 0.01, s - dove.bw / 2, s + dove.bw / 2), back(sp) ? tz0 - dove.td : tz0, tz1));
+              if (back(sp)) {
+                const tp = trap.map(([n, t]) => mx(jointPoint(J, n, t)));
+                const base = [[0, s - dove.bw / 2], [0, s + dove.bw / 2]].map(([n, t]) => mx(jointPoint(J, n, t)));
+                fadds.push(hull(ring(base, tz0 - dove.td), ring(tp, tz0), ring(tp, tz1)));
+              } else fadds.push(prismNT(J, trap, tz0, tz1));
+            } else {
+              // drážka v zesíleném místě
+              const tr = offsetConvex(trap, p.joinClear);
+              const bossNT = rectNT(0, dove.td + dove.boss, s - dove.tw / 2 - dove.boss, s + dove.tw / 2 + dove.boss);
+              if (back(sp)) {
+                const gz0 = zbk - dove.td - 0.3;
+                fadds.push(chamfered(J, rectNT(0, jw, s - dove.tw / 2 - dove.boss, s + dove.tw / 2 + dove.boss), bossNT, gz0 - 1, dove.td + dove.boss - jw));
+                fcuts.push(prismNT(J, tr, gz0, Z.zb + 1));
+              } else {
+                fadds.push(prismNT(J, bossNT, Z.za, Z.zb));
+                fcuts.push(prismNT(J, tr, Z.groove[0], Z.groove[1]));
+              }
+            }
+          }
+          for (const s of J.notches) fcuts.push(prismNT(J, rectNT(-(jw + padT + 1), jw + padT + 1, s - p.notchW / 2, s + p.notchW / 2), Z.notch[0], Z.notch[1]));
+        }
+        return { fadds, fcuts };
+      };
+      const pieceOf = (whole, cutsAll, q, zn, za, zb) => {
+        const [x0, y0, x1, y1] = q.r;
+        const a = mx([x1, y0]), b = mx([x0, y1]);
+        let m = T(whole.intersect(box(a[0], a[1], za, b[0], b[1], zb)));
+        const { fadds, fcuts } = features(q, zn);
+        if (fadds.length) {
+          let f = T(T(Manifold.union(fadds)).subtract(cutsAll));
+          if (zn === 'case' && sockClear) f = T(f.subtract(sockClear));
+          m = T(m.add(f));
+        }
+        if (fcuts.length) m = T(m.subtract(T(Manifold.union(fcuts))));
+        return m;
+      };
+      result.pieces = split.pieces.map((q) => {
+        const out = { k: q.k, i: q.i, j: q.j, r: q.r };
+        out.case = meshOut(pieceOf(caseM, cutsU, q, 'case', -1, p.depth + 1));
+        if (diffM) {
+          const [x0, y0, x1, y1] = q.r;
+          const a = mx([x1, y0]), b = mx([x0, y1]);
+          const d = T(diffM.intersect(box(a[0], a[1], -1, b[0], b[1], p.front + 1)));
+          if (!d.isEmpty()) out.diffuser = meshOut(d);
+        }
+        if (lidM) out.lid = meshOut(pieceOf(lidM, lidCutsU, q, 'lid', z0 - 1, z1 + 1));
+        return out;
+      });
     }
   } finally {
     for (const m of pool) { try { m.delete(); } catch (_) { /* už uvolněno */ } }

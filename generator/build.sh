@@ -29,5 +29,5 @@ doc = f"""<!doctype html>
 """
 open('dist/index.html', 'w', encoding='utf-8').write(doc)
 EOF
-cp gen.js symbols.js export.js worker.js manifold.js manifold.wasm manifold-LICENSE.txt dist/
+cp gen.js symbols.js split.js export.js worker.js manifold.js manifold.wasm manifold-LICENSE.txt dist/
 echo "dist/ připraven: $(du -sh dist | cut -f1)"

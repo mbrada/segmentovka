@@ -191,6 +191,11 @@ pre { margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 1
 .fp-sym { fill: none; stroke: var(--led); stroke-linecap: round; stroke-linejoin: round; }
 .fp-win { fill: none; stroke: var(--led); stroke-width: 0.35; stroke-dasharray: 1 1; opacity: 0.55; }
 .fp-num-sym { fill: var(--display-fg); font-family: var(--font-mono); font-weight: 600; }
+.fp-cut { stroke: var(--display-fg); stroke-width: 0.6; stroke-dasharray: 3 2; opacity: 0.8; }
+.fp-joint { fill: var(--display); stroke: var(--display-fg); stroke-width: 0.5; }
+.fp-notch { fill: var(--display-muted); }
+.fp-piece { fill: var(--display-muted); font-family: var(--font-mono); font-weight: 600; }
+.scale-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
 .chips-label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); align-self: center; margin-right: 4px; }
 .note-row { grid-template-columns: minmax(0, 1fr); }
 </style>
@@ -281,6 +286,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import { DEFAULTS, computeLayout, lidToPrint, ledMap } from './gen.js';
 import { SYMBOL_PRESETS } from './symbols.js';
+import { jointPoint } from './split.js';
 import { stl, threeMF, zip } from './export.js';
 
 const PRESETS = [
@@ -300,6 +306,7 @@ const STYLES = [
 const GROUPS = [
   { id: 'digits', title: 'Číslice', open: true, items: [
     ['segStyle', 'Styl segmentů', 'styles', STYLES],
+    ['scale', 'Zvětšit nebo zmenšit číslice', 'scale', [0.5, 0.8, 1.25, 1.5, 2, 3]],
     ['digitH', 'Výška číslice', 'mm', 10, 400, 0.5],
     ['digitW', 'Šířka číslice', 'mm', 5, 300, 0.5],
     ['segW', 'Tloušťka segmentu', 'mm', 2, 40, 0.5],
@@ -366,6 +373,17 @@ const GROUPS = [
     ['usbH', 'Výška otvoru', 'mm', 3, 30, 0.5],
     ['keyholes', 'Otvory na zavěšení', 'bool'],
   ] },
+  { id: 'split', title: 'Dělení na díly', items: [
+    ['splitNote', 'Když se pouzdro nevejde na tiskovou plochu, rozdělí se na díly. Řezy nikdy nevedou přes lůžka LED a pokud to jde, ani přes světlovody. Díly mají u spoje stěny s rybinovými zámky (zasunou se do sebe zezadu) nebo šrouby M3 s maticí a výřezy pro vodiče otevřené dozadu. Stejně se rozdělí i krabička.', 'note'],
+    ['splitMode', 'Dělení', 'select', [['auto', 'podle tiskové plochy'], ['off', 'nedělit']]],
+    ['bedW', 'Tisková plocha – šířka', 'mm', 100, 600, 1, 'Bambu X1/P1/A1: 256, A1 mini: 180'],
+    ['bedH', 'Tisková plocha – hloubka', 'mm', 100, 600, 1],
+    ['joinType', 'Spojení dílů', 'select', [['both', 'zámky i šrouby'], ['dovetail', 'jen rybinové zámky'], ['screws', 'jen šrouby M3']]],
+    ['jointWall', 'Spojovací stěna', 'mm', 1.2, 6, 0.1],
+    ['joinClear', 'Vůle zámku', 'mm', 0, 0.6, 0.05],
+    ['notchW', 'Výřez pro vodiče – šířka', 'mm', 4, 40, 0.5],
+    ['notchH', 'Výřez pro vodiče – hloubka', 'mm', 3, 30, 0.5],
+  ] },
   { id: 'wire', title: 'Zapojení a kvalita', items: [
     ['segOrder', 'Pořadí segmentů v číslici', 'text', 'např. abcdefg nebo gfedcba'],
     ['quality', 'Hladkost oblouků', 'seg.', 16, 96, 4],
@@ -420,6 +438,14 @@ function buildParamsUI() {
       const id = `p-${key}`;
       let help = '';
       let ctl = '';
+      if (kind === 'scale') {
+        delete row.dataset.key;
+        row.className = 'row scale-row';
+        row.innerHTML = `<span class="styles-label">${label}</span><div class="presets">${it[3].map((f) => `<button type="button" class="chip" data-scale="${f}">×${String(f).replace('.', ',')}</button>`).join('')}</div>`;
+        row.querySelectorAll('[data-scale]').forEach((b) => b.addEventListener('click', () => scaleDigits(Number(b.dataset.scale))));
+        rows.append(row);
+        continue;
+      }
       if (kind === 'note') {
         delete row.dataset.key;
         row.className = 'row note-row';
@@ -507,6 +533,16 @@ function syncInputs() {
   markPresets();
 }
 
+// Změní velikost číslic, teček a symbolů jedním krokem (hloubka a lůžka LED zůstávají).
+const SCALE_KEYS = ['digitH', 'digitW', 'segW', 'gap', 'digitGap', 'colonW', 'dpW', 'dotSize', 'symH', 'symStroke', 'symPad', 'margin'];
+function scaleDigits(f) {
+  for (const k of SCALE_KEYS) params[k] = Math.round(params[k] * f * 100) / 100;
+  params.symStroke = Math.max(0.8, params.symStroke);
+  params.margin = Math.max(params.wall + 2, params.margin);
+  syncInputs();
+  changed();
+}
+
 // Malá ukázka „8“ v daném stylu (stejná geometrie jako model).
 function styleThumb(style) {
   const lay = computeLayout({ ...DEFAULTS, layout: '8', segStyle: style, margin: 2 });
@@ -583,7 +619,7 @@ function changed() {
   setExportEnabled(false);
   setStatus('Generuji model…', 'busy');
   clearTimeout(buildTimer);
-  buildTimer = setTimeout(() => engine.run({ ...params }), 220);
+  buildTimer = setTimeout(() => engine.run({ ...params }, L), 220);
 }
 
 // ---------- výpočetní jádro (worker, záložně hlavní vlákno) ----------
@@ -596,9 +632,9 @@ const engine = {
       this.worker.onerror = (e) => { if (e.preventDefault) e.preventDefault(); this.worker = null; if (this.last) this.runInline(this.last.id, this.last.params); };
     } catch (_) { this.worker = null; }
   },
-  run(p) {
+  run(p, lay) {
     const id = ++this.seq;
-    this.last = { id, params: p };
+    this.last = { id, params: p, L: lay };
     if (this.worker) this.worker.postMessage({ id, params: p });
     else this.runInline(id, p);
   },
@@ -627,13 +663,20 @@ const engine = {
       setStatus(`Model se nepodařilo vytvořit: ${msg.error}`, 'err');
       return;
     }
-    built = { L: computeLayout(this.last.params), R: msg.R, params: { ...this.last.params } };
+    built = { L: this.last.L || computeLayout(this.last.params), R: msg.R, params: { ...this.last.params } };
     viewer.setModels(built);
-    const tris = Object.values(msg.R).reduce((s, m) => s + m.tri.length / 3, 0);
+    const tris = meshList(msg.R).reduce((s, m) => s + m.tri.length / 3, 0);
     setStatus(`Hotovo za ${fmt(msg.ms / 1000, 2)} s · ${tris.toLocaleString('cs-CZ')} trojúhelníků`);
     setExportEnabled(true);
   },
 };
+
+// všechny sítě výsledku (celé pouzdro nebo jednotlivé díly)
+function meshList(R) {
+  const out = [R.case, R.diffuser, R.lid];
+  for (const q of R.pieces || []) out.push(q.case, q.diffuser, q.lid);
+  return out.filter(Boolean);
+}
 
 function setStatus(text, cls = '') {
   const s = $('#status');
@@ -662,10 +705,11 @@ const viewer = {
     this.plane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0);
     this.mats = {
       case: new THREE.MeshStandardMaterial({ color: 0x2c302e, roughness: 0.78, metalness: 0, side: THREE.DoubleSide }),
+      case2: new THREE.MeshStandardMaterial({ color: 0x40464a, roughness: 0.78, metalness: 0, side: THREE.DoubleSide }),
       diffuser: new THREE.MeshStandardMaterial({ color: 0xffb49c, roughness: 0.5, emissive: 0xff3d14, emissiveIntensity: 0.75, side: THREE.DoubleSide }),
       lid: new THREE.MeshStandardMaterial({ color: 0x4a504d, roughness: 0.8, side: THREE.DoubleSide }),
     };
-    this.meshes = {};
+    this.meshes = [];
     this.view = 'back';
     new ResizeObserver(() => this.resize()).observe(host);
     this.applyTheme();
@@ -686,18 +730,35 @@ const viewer = {
   },
   setModels({ L: lay, R }) {
     const first = !this.box;
-    for (const m of Object.values(this.meshes)) { this.group.remove(m); m.geometry.dispose(); }
-    this.meshes = {};
+    for (const m of this.meshes) { this.group.remove(m); m.geometry.dispose(); }
+    this.meshes = [];
     const p = lay.p;
-    for (const [k, mesh] of Object.entries(R)) {
+    const add = (mesh, role, off, alt) => {
+      if (!mesh) return;
       let g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(mesh.vert, 3));
       g.setIndex(new THREE.BufferAttribute(mesh.tri, 1));
       g = toCreasedNormals(g, Math.PI / 5);
-      const m = new THREE.Mesh(g, this.mats[k]);
-      if (k === 'lid') m.position.z = 30;
-      this.meshes[k] = m;
+      const m = new THREE.Mesh(g, alt && role !== 'diffuser' ? this.mats.case2 : this.mats[role]);
+      m.userData.role = role;
+      m.position.set(off[0], off[1], off[2] + (role === 'lid' ? 30 : 0));
+      this.meshes.push(m);
       this.group.add(m);
+    };
+    if (R.pieces) {
+      // díly mírně od sebe, sousední v jiném odstínu
+      const sp = lay.split, gap = Math.max(6, Math.min(lay.caseW, lay.caseH) * 0.025);
+      for (const q of R.pieces) {
+        const off = [-(q.i - (sp.nx - 1) / 2) * gap, (q.j - (sp.ny - 1) / 2) * gap, 0];
+        const alt = (q.i + q.j) % 2 === 1;
+        add(q.case, 'case', off, alt);
+        add(q.diffuser, 'diffuser', off, false);
+        add(q.lid, 'lid', off, alt);
+      }
+    } else {
+      add(R.case, 'case', [0, 0, 0]);
+      add(R.diffuser, 'diffuser', [0, 0, 0]);
+      add(R.lid, 'lid', [0, 0, 0]);
     }
     const prevSize = this.box ? [this.box.W, this.box.H, this.box.D] : null;
     this.box = { W: lay.caseW, H: lay.caseH, D: p.depth };
@@ -710,8 +771,10 @@ const viewer = {
   applyToggles() {
     const cut = $('#v-cut').checked;
     for (const m of Object.values(this.mats)) { m.clippingPlanes = cut ? [this.plane] : []; m.needsUpdate = true; }
-    if (this.meshes.diffuser) this.meshes.diffuser.visible = $('#v-diff').checked;
-    if (this.meshes.lid) this.meshes.lid.visible = $('#v-lid').checked;
+    for (const m of this.meshes) {
+      if (m.userData.role === 'diffuser') m.visible = $('#v-diff').checked;
+      if (m.userData.role === 'lid') m.visible = $('#v-lid').checked;
+    }
   },
   setView(name) {
     this.view = name;
@@ -775,7 +838,27 @@ function renderFront() {
     }
     s += `<text x="${e.c[0]}" y="${Y(e.c[1])}" font-size="${fs}" text-anchor="middle" dominant-baseline="central" class="fp-num">${e.led}</text>`;
   }
-  s += `<text x="${W / 2}" y="${H + 9}" font-size="5" text-anchor="middle" class="fp-cap">${fmt(W)} × ${fmt(H)} mm · pohled zepředu · čísla = pořadí LED v řetězu · čárkovaně lůžka a sloupky</text>`;
+  const sp = L.split;
+  if (sp && sp.n > 1) {
+    for (const J of sp.joints) {
+      const [ax, ay] = jointPoint(J, 0, J.from), [bx, by] = jointPoint(J, 0, J.to);
+      s += `<line x1="${ax}" y1="${Y(ay)}" x2="${bx}" y2="${Y(by)}" class="fp-cut"/>`;
+      for (const q of J.spots) {
+        const [qx, qy] = jointPoint(J, 0, q.s);
+        s += q.type === 'screw'
+          ? `<circle cx="${qx}" cy="${Y(qy)}" r="2.6" class="fp-joint"><title>šroub M3${q.zone === 'back' ? ' (vzadu)' : ''}</title></circle>`
+          : `<rect x="${qx - 2.6}" y="${Y(qy) - 2.6}" width="5.2" height="5.2" transform="rotate(45 ${qx} ${Y(qy)})" class="fp-joint"><title>rybinový zámek${q.zone === 'back' ? ' (vzadu)' : ''}</title></rect>`;
+      }
+      for (const t of J.notches) {
+        const [qx, qy] = jointPoint(J, 0, t), w = p.notchW;
+        s += J.dir === 'v'
+          ? `<rect x="${qx - 1.5}" y="${Y(qy) - w / 2}" width="3" height="${w}" class="fp-notch"><title>výřez pro vodiče</title></rect>`
+          : `<rect x="${qx - w / 2}" y="${Y(qy) - 1.5}" width="${w}" height="3" class="fp-notch"><title>výřez pro vodiče</title></rect>`;
+      }
+    }
+    for (const q of sp.pieces) s += `<text x="${q.r[0] + 4}" y="${Y(q.r[3]) + 9}" font-size="7" class="fp-piece">${q.k}</text>`;
+  }
+  s += `<text x="${W / 2}" y="${H + 9}" font-size="5" text-anchor="middle" class="fp-cap">${fmt(W)} × ${fmt(H)} mm · pohled zepředu · čísla = pořadí LED v řetězu · čárkovaně lůžka a sloupky${sp && sp.n > 1 ? ` · ${sp.n} dílů: ◇ zámek, ○ šroub, ▭ výřez pro vodiče` : ''}</text>`;
   s += '</svg>';
   pane.innerHTML = s;
 }
@@ -789,10 +872,20 @@ function renderFacts() {
     ...(p.lid ? [['Krabička', `<b>${fmt(L.caseW)} × ${fmt(L.caseH)} × ${fmt(p.lidDepth)}</b> mm`]] : []),
     ['Moduly LED', `<b>${n}</b> × WS2812B, kulatá deska ⌀ 10 mm`],
     ['Napájení', `5 V, až <b>${fmt(amps, 2)}</b> A při plném bílém jasu`],
-    ['Šrouby', `<b>${L.posts.length}</b> × M3 × 12–16 mm`],
+    ['Šrouby', `<b>${L.posts.length}</b> × M3 × 12–16 mm${jointScrews(L) ? ` a <b>${jointScrews(L)}</b> × M3 × 16 s maticí na spoje dílů` : ''}`],
+    ['Tisk', L.split && L.split.n > 1
+      ? `<b>${L.split.n}</b> dílů (${L.split.nx} × ${L.split.ny}), největší ${fmt(Math.max(...L.split.pieces.map((q) => q.r[2] - q.r[0])))} × ${fmt(Math.max(...L.split.pieces.map((q) => q.r[3] - q.r[1])))} mm`
+      : `jeden kus, vejde se na plochu ${fmt(p.bedW)} × ${fmt(p.bedH)} mm`],
     ['Číslice', `${fmt(p.digitW)} × ${fmt(p.digitH)} mm, segment ${fmt(p.segW)} mm, ${((STYLES.find((s) => s[0] === p.segStyle) || STYLES[0])[1]).toLowerCase()}${p.slant ? `, sklon ${fmt(p.slant)}°` : ''}`],
   ];
   $('#facts').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+}
+
+// šrouby na spojích: každý v pouzdře a (když je) i v krabičce
+function jointScrews(lay) {
+  if (!lay.split || lay.split.n < 2) return 0;
+  const n = lay.split.joints.reduce((a, J) => a + J.spots.filter((q) => q.type === 'screw').length, 0);
+  return n * (lay.p.lid ? 2 : 1);
 }
 
 function renderWarnings() {
@@ -812,10 +905,20 @@ const baseName = () => `segmentovka_${slug(built ? built.params.layout : params.
 
 async function make3mf() {
   const { L: lay, R } = built;
-  const parts = [{ name: 'Pouzdro', mesh: R.case }];
-  if (R.diffuser) parts.push({ name: 'Difuzory', mesh: R.diffuser });
-  const extra = R.lid ? [{ name: 'Zadní krabička', mesh: lidToPrint(R.lid, lay), offset: [0, lay.caseH + 10, 0] }] : [];
-  return zip(threeMF({ title: `Segmentovka ${lay.p.layout}`, parts, extra }));
+  const groups = [];
+  if (R.pieces) {
+    // díly od sebe, aby se nepřekrývaly; slicer je pak rozmístí na podložky
+    for (const q of R.pieces) {
+      groups.push({ name: `Díl ${q.k}`, parts: [{ name: `Pouzdro ${q.k}`, mesh: q.case }, { name: `Difuzory ${q.k}`, mesh: q.diffuser }], offset: [-q.i * 20, q.j * 20, 0] });
+    }
+    for (const q of R.pieces) {
+      if (q.lid) groups.push({ name: `Krabička ${q.k}`, parts: [{ name: `Krabička ${q.k}`, mesh: lidToPrint(q.lid, lay) }], offset: [-q.i * 20, lay.caseH + 30 + (lay.split.ny - 1 - q.j) * 20, 0] });
+    }
+  } else {
+    groups.push({ name: 'Pouzdro s difuzory', parts: [{ name: 'Pouzdro', mesh: R.case }, { name: 'Difuzory', mesh: R.diffuser }] });
+    if (R.lid) groups.push({ name: 'Zadní krabička', parts: [{ name: 'Zadní krabička', mesh: lidToPrint(R.lid, lay) }], offset: [0, lay.caseH + 10, 0] });
+  }
+  return zip(threeMF({ title: `Segmentovka ${lay.p.layout}`, groups }));
 }
 
 function readme(lay) {
@@ -830,10 +933,18 @@ function readme(lay) {
     'Díly:',
     `- ${lay.els.length} × modul WS2812B (kulatá deska ⌀ 10 mm, lůžko ⌀ ${fmt(p.modD, 2)} mm)`,
     `- ${lay.posts.length} × šroub M3 × 12–16 mm (do otvorů ⌀ ${fmt(p.screwD, 2)} mm)`,
+    jointScrews(lay) ? `- ${jointScrews(lay)} × šroub M3 × 16 s maticí na spoje dílů` : null,
+    ...(lay.split && lay.split.n > 1 ? [
+      '',
+      `Dělení: ${lay.split.n} dílů (${lay.split.nx} × ${lay.split.ny}), číslování zleva shora v čelním pohledu.`,
+      '- díly mají u spoje stěny; rybinové zámky se zasunou do sebe zezadu (díl s perem shora do drážky),',
+      '  pak se díly stáhnou šrouby M3 s maticí; vodiče vedou výřezy ve spojových stěnách otevřenými dozadu',
+      '- difuzory v *_difuzory.stl jsou celé (přes spoje drží díly u sebe); v 3MF jsou rozdělené podle dílů pro tisk s AMS',
+    ] : []),
     `- zdroj 5 V, až ${fmt(lay.els.length * 0.06, 2)} A při plném bílém jasu`,
     '',
     'Soubory:',
-    '- *_pouzdro.stl, *_difuzory.stl, *_krabicka.stl – jednotlivé díly',
+    lay.split && lay.split.n > 1 ? '- *_pouzdro_N.stl, *_krabicka_N.stl – díly pouzdra a krabičky, *_difuzory.stl – všechny difuzory' : '- *_pouzdro.stl, *_difuzory.stl, *_krabicka.stl – jednotlivé díly',
     '- *.3mf – pouzdro a difuzory jako dva díly jednoho objektu (pro tisk s AMS) + krabička',
     '- *_led-mapa.h – pořadí LED v řetězu pro firmware',
     '- *_parametry.json – lze znovu načíst v generátoru (Načíst parametry…)',
@@ -846,6 +957,10 @@ async function buildZip() {
   const base = baseName();
   const files = [];
   if (R.case) files.push({ name: `${base}_pouzdro.stl`, data: stl(R.case, 'pouzdro') });
+  for (const q of R.pieces || []) {
+    files.push({ name: `${base}_pouzdro_${q.k}.stl`, data: stl(q.case, `pouzdro ${q.k}`) });
+    if (q.lid) files.push({ name: `${base}_krabicka_${q.k}.stl`, data: stl(lidToPrint(q.lid, lay), `krabicka ${q.k}`) });
+  }
   if (R.diffuser) files.push({ name: `${base}_difuzory.stl`, data: stl(R.diffuser, 'difuzory') });
   if (R.lid) files.push({ name: `${base}_krabicka.stl`, data: stl(lidToPrint(R.lid, lay), 'krabicka') });
   files.push({ name: `${base}.3mf`, data: await make3mf() });
