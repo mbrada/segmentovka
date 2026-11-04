@@ -53,10 +53,11 @@ doc = f"""<!doctype html>
 </head>
 <body>
 {body.strip()}
+<script type="module" src="feedback.js"></script>
 </body>
 </html>
 """
 open('dist/index.html', 'w', encoding='utf-8').write(doc)
 EOF
-cp consent.js og.png gen.js symbols.js split.js export.js worker.js manifold.js manifold.wasm manifold-LICENSE.txt dist/
+cp consent.js feedback.js og.png gen.js symbols.js split.js export.js worker.js manifold.js manifold.wasm manifold-LICENSE.txt dist/
 echo "dist/ připraven: $(du -sh dist | cut -f1)"

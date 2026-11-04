@@ -88,11 +88,18 @@
     const st = document.createElement('style');
     st.textContent = css;
     document.head.appendChild(st);
-    const foot = document.createElement('footer');
-    foot.className = 'cc-foot';
-    foot.innerHTML = '<button type="button">Nastavení cookies</button>';
-    foot.querySelector('button').addEventListener('click', bar);
-    (document.querySelector('.app') || document.body.lastElementChild).after(foot);
+    // patičku sdílí s feedback.js; kdo přijde první, ten ji založí
+    let foot = document.querySelector('.cc-foot');
+    if (!foot) {
+      foot = document.createElement('footer');
+      foot.className = 'cc-foot';
+      (document.querySelector('.app') || document.body.lastElementChild).after(foot);
+    }
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = 'Nastavení cookies';
+    btn.addEventListener('click', bar);
+    foot.append(btn);
     if (!choice) bar();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
