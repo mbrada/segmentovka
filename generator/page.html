@@ -218,8 +218,9 @@ pre { margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 1
         <input id="p-layout" type="text" autocomplete="off" spellcheck="false" maxlength="60" aria-describedby="layout-legend">
       </div>
       <div class="presets" id="presets" aria-label="Předvolby rozložení"></div>
+      <div class="presets" id="meteo" role="group" aria-label="Meteostanice: veličiny ve sloupci symbolů"><span class="chips-label">Meteostanice</span></div>
       <div class="presets" id="symbols" aria-label="Vložit symbol"><span class="chips-label">Vložit symbol</span></div>
-      <p class="legend" id="layout-legend"><code>8</code> číslice · <code>1</code> úzká jednička · <code>-</code> mínus · <code>:</code> dvojtečka · <code>.</code> desetinná tečka · <code>°</code> stupeň · <code>[cm]</code> symbol za jednou LED · mezera</p>
+      <p class="legend" id="layout-legend"><code>8</code> číslice · <code>1</code> úzká jednička · <code>-</code> mínus · <code>:</code> dvojtečka · <code>.</code> desetinná tečka · <code>°</code> stupeň · <code>[cm]</code> symbol za jednou LED · <code>[°C|%]</code> symboly pod sebou · mezera</p>
     </div>
   </header>
 
@@ -285,7 +286,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import { DEFAULTS, computeLayout, lidToPrint, ledMap } from './gen.js';
-import { SYMBOL_PRESETS } from './symbols.js';
+import { SYMBOL_PRESETS, METEO } from './symbols.js';
 import { jointPoint } from './split.js';
 import { stl, threeMF, zip } from './export.js';
 
@@ -354,10 +355,10 @@ const GROUPS = [
     ['diffT', 'Tloušťka difuzoru', 'mm', 0.2, 3, 0.1],
   ] },
   { id: 'sym', title: 'Symboly', items: [
-    ['symNote', 'Symbol zapíšete do rozložení v hranatých závorkách, např. 88.8[cm]. V čele je maska s vyříznutým písmem, které svítí jedna LED přes společný světlovod. Kroužky u ° a % a příčka u A mají šablonové přerušení, aby z masky nic nevypadlo.', 'note'],
+    ['symNote', 'Symbol zapíšete do rozložení v hranatých závorkách, např. 88.8[cm]. V čele je maska s vyříznutým písmem, které svítí jedna LED přes společný světlovod. Svislá čára skládá symboly pod sebe do sloupce, každý se svou LED: 888.8[°C|%|hPa|ppm]. Když se do výšky číslice nevejdou, písmo se ve sloupci zmenší. Uzavřená očka (°, %, O, P, a…) mají šablonové přerušení, aby z masky nic nevypadlo.', 'note'],
     ['symH', 'Výška písma', 'mm', 5, 60, 0.5, 'výška velkých písmen'],
     ['symStroke', 'Tloušťka tahu', 'mm', 0.8, 5, 0.1, 'šířka průřezu v masce'],
-    ['symPos', 'Svislá poloha', 'select', [['auto', 'podle symbolu'], ['bottom', 'dole'], ['middle', 'uprostřed'], ['top', 'nahoře']]],
+    ['symPos', 'Svislá poloha', 'select', [['auto', 'podle symbolu'], ['bottom', 'dole'], ['middle', 'uprostřed'], ['top', 'nahoře']], 'jen u samostatného symbolu; sloupec vyplní celou výšku'],
     ['symPad', 'Okraj kolem symbolu', 'mm', 0, 20, 0.5],
   ] },
   { id: 'lid', title: 'Zadní krabička', items: [
@@ -465,6 +466,7 @@ function buildParamsUI() {
         continue;
       }
       if (kind === 'select') {
+        help = it[4] || '';
         ctl = `<select id="${id}">${it[3].map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select>`;
       } else if (kind === 'bool') {
         help = it[3] || '';
@@ -603,6 +605,57 @@ function buildSymbols() {
 }
 function markPresets() {
   for (const b of document.querySelectorAll('#presets .chip')) b.setAttribute('aria-pressed', String(b.textContent === params.layout));
+  const on = meteoGroup(params.layout).keys;
+  for (const b of document.querySelectorAll('#meteo .chip')) {
+    const k = b.dataset.meteo;
+    b.setAttribute('aria-pressed', String(k === 'all' ? on.size === METEO.length : on.has(k)));
+  }
+}
+
+// Meteostanice: sloupec symbolů [°C|%|hPa|ppm] za číslicemi; tlačítka ho skládají a upravují.
+// Uživatelem zvolená varianta symbolu (°F, %RH, mbar, CO₂) se při přepínání zachová.
+const METEO_ALT = { temp: ['°C', '°F'], hum: ['%', '%RH'], press: ['hPa', 'mbar'], co2: ['ppm', 'CO₂', 'CO2'] };
+const meteoKey = (t) => Object.keys(METEO_ALT).find((k) => METEO_ALT[k].includes(t));
+function meteoGroup(layout) {
+  const re = /\[([^\]]*)\]/g;
+  let m;
+  while ((m = re.exec(layout))) {
+    const items = m[1].split('|').map((t) => t.trim()).filter(Boolean);
+    if (items.some(meteoKey)) return { start: m.index, end: m.index + m[0].length, items, keys: new Set(items.map(meteoKey).filter(Boolean)) };
+  }
+  return { start: -1, items: [], keys: new Set() };
+}
+function setMeteo(keys) {
+  const g = meteoGroup(params.layout);
+  const items = METEO.filter(([k]) => keys.has(k)).map(([k, , sym]) => g.items.find((t) => meteoKey(t) === k) || sym);
+  items.push(...g.items.filter((t) => !meteoKey(t)));
+  const grp = items.length ? `[${items.join('|')}]` : '';
+  // bez sloupce začíná meteostanice od čtyř číslic s desetinnou tečkou: -12.5 °C, 1013 hPa, 1250 ppm
+  const lay = g.start >= 0 ? params.layout.slice(0, g.start) + grp + params.layout.slice(g.end) : '888.8' + grp;
+  params.layout = lay;
+  $('#p-layout').value = lay;
+  changed();
+}
+function buildMeteo() {
+  const box = $('#meteo');
+  const all = [['all', 'vše', 'Všechny čtyři veličiny: teplota, vlhkost, tlak a CO₂']].concat(METEO.map(([k, label, sym]) => [k, `${label.toLowerCase().replace('co₂', 'CO₂')} ${sym}`, `${label} – symbol ${sym} s vlastní LED`]));
+  for (const [k, text, title] of all) {
+    const b = document.createElement('button');
+    b.className = 'chip';
+    b.type = 'button';
+    b.dataset.meteo = k;
+    b.textContent = text;
+    b.title = title;
+    b.setAttribute('aria-pressed', 'false');
+    b.addEventListener('click', () => {
+      const on = new Set(meteoGroup(params.layout).keys);
+      if (k === 'all') { if (on.size === METEO.length) on.clear(); else METEO.forEach(([x]) => on.add(x)); }
+      else if (on.has(k)) on.delete(k);
+      else on.add(k);
+      setMeteo(on);
+    });
+    box.append(b);
+  }
 }
 
 // ---------- přepočet ----------
@@ -830,6 +883,12 @@ function renderFront() {
     }
   }
   for (const e of L.els) {
+    if (e.kind === 'sym' && e.stack) {
+      // ve sloupci vlevo od okna – nad ním už je další symbol
+      const left = Math.min(...e.poly.map(([x]) => x));
+      s += `<text x="${left - 1.2}" y="${Y(e.c[1])}" font-size="${Math.min(fs, 4.5)}" text-anchor="end" dominant-baseline="central" class="fp-num-sym">${e.led}</text>`;
+      continue;
+    }
     if (e.kind === 'sym') {
       // číslo nad symbolem, aby nepřekrylo písmo
       const top = Math.max(...e.poly.map(([, y]) => y));
@@ -1064,6 +1123,7 @@ new MutationObserver(() => viewer.applyTheme()).observe(document.documentElement
 
 // ---------- start ----------
 buildPresets();
+buildMeteo();
 buildSymbols();
 buildParamsUI();
 $('#p-layout').addEventListener('input', (e) => { params.layout = e.target.value; changed(); });

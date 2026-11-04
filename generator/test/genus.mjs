@@ -69,6 +69,19 @@ for (const layout of ['88:88', '8.8', '-8', '8°', '188', '-88.8°', '88:88:88']
 for (const sym of SYMBOL_PRESETS) {
   console.log(`[${sym}]`.padEnd(9), `8[${sym}] ${check({ layout: `8[${sym}]` })}`, `  sklon 8°: ${check({ layout: `8[${sym}]`, slant: 8 })}`);
 }
+// meteostanice: sloupec symbolů pod sebou, plný i částečný, se sklonem a s jinými styly
+for (let [layout, pr] of [
+  ['888.8[°C|%|hPa|ppm]', {}], ['888.8[°C|%|hPa|ppm]', { slant: 8, segStyle: 'bevel' }], ['888.8[°C|%|hPa|ppm]', { segStyle: 'round', symStroke: 1.6 }],
+  ['888.8[°C|%]', {}], ['888.8[°F|%RH|mbar|CO₂]', {}], ['-88.8[°C|%]', { segStyle: 'flat' }], ['8888[hPa|ppm]', { digitH: 60, digitW: 28, segW: 7, digitGap: 8 }],
+  ['8888[°C|%|hPa|ppm] zmenšené písmo', { digitH: 60, digitW: 28, segW: 7, digitGap: 8 }],
+]) {
+  layout = layout.split(' ')[0]; // za mezerou je jen popis
+  const L = computeLayout({ layout, ...pr });
+  const sym = L.els.filter((e) => e.kind === 'sym');
+  const warn = L.warnings.filter((w) => /překrývají|nevejdou|nemá/.test(w));
+  if (warn.length) bad++;
+  console.log(layout.padEnd(24), JSON.stringify(pr).padEnd(42), `LED ${L.els.length}, symbolů ${sym.length}, ${L.caseW.toFixed(0)}×${L.caseH.toFixed(0)} mm`, check({ layout, ...pr }), warn.join(' '));
+}
 const big = { digitH: 300, digitW: 140, segW: 30, gap: 8, colonW: 50, dotSize: 28, margin: 15 };
 for (const [name, pr] of [
   ['88:88 obří', { layout: '88:88', ...big }],

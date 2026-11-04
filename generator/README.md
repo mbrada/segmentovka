@@ -11,6 +11,9 @@ Běží na https://segmentovka.miloslavbrada.cz
   `.` desetinná tečka, `°` stupeň, mezera
 - symboly v hranatých závorkách, např. `88.8[cm]`, `-88.8[°C]`: v čele maska s vyříznutým
   šablonovým písmem, svítí ji jedna LED přes společný světlovod (písmo v `symbols.js`)
+- sloupec symbolů pod sebou, každý se svou LED: `888.8[°C|%|hPa|ppm]` – meteostanice
+  (teplota, vlhkost, tlak, CO₂); tlačítka „Meteostanice“ zapínají jednotlivé veličiny
+  nebo všechny, písmo se do výšky číslice případně zmenší; mapa LED má `SYM_TEPLOTA` …
 - výstupy: pouzdro (tisk čelem dolů), difuzory do 1mm vybrání, zadní krabička se sloupky,
   otvorem pro kabel a otvory na zavěšení; 3MF má pouzdro a difuzory jako dva díly jednoho
   objektu (tisk s AMS), mapa LED pro firmware

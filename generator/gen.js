@@ -51,8 +51,10 @@ export function parseLayout(str) {
     if (ch === '[') {
       const end = chars.indexOf(']', i + 1);
       if (end < 0) { bad.add('['); continue; }
+      // [°C|%|hPa] = sloupec symbolů pod sebou, každý se svou LED
       const text = chars.slice(i + 1, end).join('').trim();
-      if (text) glyphs.push({ t: 'sym', ch: text });
+      const items = text.split('|').map((t) => t.trim()).filter(Boolean);
+      if (items.length) glyphs.push({ t: 'sym', ch: items.join('|'), items });
       i = end;
       continue;
     }
@@ -239,13 +241,22 @@ export function computeLayout(params) {
     const prev = glyphs[i - 1];
     if (prev && DIGITLIKE.has(prev.t) && DIGITLIKE.has(g.t)) x += p.digitGap;
     let cw = g.t === 'one' ? w : g.t === 'colon' ? p.colonW : g.t === 'dp' ? p.dpW : p.digitW;
-    let sym = null;
+    let syms = null;
     if (g.t === 'sym') {
-      sym = layoutSymbol(g.ch, { height: p.symH, stroke: p.symStroke });
-      if (sym.bad.length) warnings.push(`Symbol [${g.ch}]: znaky ${sym.bad.map((c) => `„${c}“`).join(', ')} písmo nemá (vynechávám je).`);
-      cw = Math.max(sym.width + p.symStroke + 2 * p.symPad, 2 * rOut + 1);
+      const lay = (hgt) => g.items.map((t) => layoutSymbol(t, { height: hgt, stroke: p.symStroke }));
+      syms = lay(p.symH);
+      if (g.items.length > 1) {
+        // sloupec: každý symbol má pás výšky H/n; mezi okny musí zůstat stěna světlovodu
+        const room = H / g.items.length - p.symStroke - Math.max(p.tubeWall, 1);
+        const bb = Math.max(...syms.map((s) => s.maxY - s.minY));
+        if (bb > room && room > 1) syms = lay((p.symH * room) / bb);
+      }
+      syms.forEach((sy, j) => {
+        if (sy.bad.length) warnings.push(`Symbol [${g.items[j]}]: znaky ${sy.bad.map((c) => `„${c}“`).join(', ')} písmo nemá (vynechávám je).`);
+      });
+      cw = Math.max(Math.max(...syms.map((sy) => sy.width)) + p.symStroke + 2 * p.symPad, 2 * rOut + 1);
     }
-    cells.push({ ...g, x0: x, w: cw, idx: i, sym });
+    cells.push({ ...g, x0: x, w: cw, idx: i, syms });
     x += cw;
   });
 
@@ -272,19 +283,28 @@ export function computeLayout(params) {
         });
       }
     } else if (c.t === 'sym') {
-      const sy = c.sym;
-      if (!sy.lines.length) continue;
-      const r = p.symStroke / 2;
-      const pos = p.symPos === 'auto' ? (sy.top ? 'top' : 'bottom') : p.symPos;
-      const dy = pos === 'top' ? H - sy.maxY - r : pos === 'middle' ? H / 2 - (sy.minY + sy.maxY) / 2 : r - sy.minY;
-      const dx = c.x0 + (c.w - sy.width) / 2;
-      const lines = sy.lines.map((pl) => pl.map(([px, py]) => shear([px + dx, py + dy])));
-      const window = convexHull(strokePolygons(lines, p.symStroke, 12).flat());
-      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-      for (const [px, py] of window) { x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); }
-      els.push({
-        glyph: c.idx, ch: c.ch, name: c.ch, kind: 'sym', poly: window, lines,
-        c: [(x0 + x1) / 2, (y0 + y1) / 2], u: [1, 0],
+      const n = c.syms.length, r = p.symStroke / 2;
+      const wMax = Math.max(...c.syms.map((sy) => sy.width));
+      c.syms.forEach((sy, j) => {
+        if (!sy.lines.length) return;
+        let dy, dx;
+        if (n > 1) {
+          // sloupec zarovnaný vlevo, každý symbol uprostřed svého pásu
+          dy = H - (H / n) * (j + 0.5) - (sy.minY + sy.maxY) / 2;
+          dx = c.x0 + (c.w - wMax) / 2;
+        } else {
+          const pos = p.symPos === 'auto' ? (sy.top ? 'top' : 'bottom') : p.symPos;
+          dy = pos === 'top' ? H - sy.maxY - r : pos === 'middle' ? H / 2 - (sy.minY + sy.maxY) / 2 : r - sy.minY;
+          dx = c.x0 + (c.w - sy.width) / 2;
+        }
+        const lines = sy.lines.map((pl) => pl.map(([px, py]) => shear([px + dx, py + dy])));
+        const window = convexHull(strokePolygons(lines, p.symStroke, 12).flat());
+        let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+        for (const [px, py] of window) { x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); }
+        els.push({
+          glyph: c.idx, ch: c.ch, name: c.items[j], kind: 'sym', sub: j, stack: n > 1, poly: window, lines,
+          c: [(x0 + x1) / 2, (y0 + y1) / 2], u: [1, 0],
+        });
       });
     } else {
       const cx = c.x0 + c.w / 2;
@@ -321,7 +341,7 @@ export function computeLayout(params) {
 
   // pořadí LED v řetězu
   const order = (p.segOrder || 'abcdefg').toLowerCase();
-  const rank = (e) => (e.kind === 'seg' ? (order.indexOf(e.name) >= 0 ? order.indexOf(e.name) : 10 + 'abcdefg'.indexOf(e.name)) : e.name === 'dolní' ? 1 : 0);
+  const rank = (e) => (e.kind === 'seg' ? (order.indexOf(e.name) >= 0 ? order.indexOf(e.name) : 10 + 'abcdefg'.indexOf(e.name)) : e.kind === 'sym' ? e.sub : e.name === 'dolní' ? 1 : 0);
   els.sort((a, b) => a.glyph - b.glyph || rank(a) - rank(b));
   els.forEach((e, i) => (e.led = i));
 
@@ -721,6 +741,10 @@ export function ledMap(L) {
   const syms = L.els.filter((e) => e.kind === 'sym');
   if (syms.length) {
     lines.push(`const uint16_t SYMBOL_LED[${syms.length}] = { ${syms.map((d) => d.led).join(', ')} }; // ${syms.map((d) => d.name).join(', ')}`);
+    // sloupec veličin (meteostanice): pojmenované indexy do SYMBOL_LED
+    const METEO_ID = { '°C': 'TEPLOTA', '°F': 'TEPLOTA', '%': 'VLHKOST', '%RH': 'VLHKOST', hPa: 'TLAK', mbar: 'TLAK', ppm: 'CO2', 'CO₂': 'CO2', CO2: 'CO2' };
+    const named = syms.map((d, i) => [METEO_ID[d.name], i]).filter(([id], i, a) => id && a.findIndex(([x]) => x === id) === i);
+    if (named.length > 1) lines.push(`enum { ${named.map(([id, i]) => `SYM_${id} = ${i}`).join(', ')} }; // index do SYMBOL_LED`);
   }
   const dots = L.els.filter((e) => e.kind === 'dot');
   if (dots.length) {

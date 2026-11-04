@@ -3,9 +3,14 @@
 // Uzavřená očka (°, %, A) mají záměrné přerušení, aby maska v čele neměla
 // volně ležící ostrůvky – pouzdro se tak dá tisknout z jednoho materiálu.
 //
-// Jednotky písma: výška verzálek 10, výška minusek 7, účaří 0.
+// Jednotky písma: výška verzálek 10, výška minusek 7, účaří 0, dotahy dolů do −3.
+//
+// Symboly lze skládat pod sebe do sloupce: [°C|%|hPa|ppm] – každý má vlastní LED.
 
-export const SYMBOL_PRESETS = ['°C', '°F', '%', 'cm', 'mm', 'm', 'km/h', 'm/s', 'V', 'A', 'W', 'kW', 'kWh', 'Hz', 'h', 'min', 's', 'lx'];
+export const SYMBOL_PRESETS = ['°C', '°F', '%', '%RH', 'hPa', 'mbar', 'ppm', 'CO₂', 'cm', 'mm', 'm', 'km/h', 'm/s', 'V', 'A', 'W', 'kW', 'kWh', 'Hz', 'h', 'min', 's', 'lx'];
+
+// Veličiny meteostanice v pořadí shora dolů: [klíč, popis, symbol].
+export const METEO = [['temp', 'Teplota', '°C'], ['hum', 'Vlhkost', '%'], ['press', 'Tlak', 'hPa'], ['co2', 'CO₂', 'ppm']];
 
 // Symboly, které se standardně zarovnávají nahoru (ostatní dolů na účaří číslic).
 const TOP_SYMBOLS = /^°/;
@@ -23,6 +28,16 @@ function arc(cx, cy, rx, ry, a0, a1, n = 18) {
 function ring(cx, cy, r, gapDeg, at) {
   if (gapDeg >= 300) return [[[cx, cy], [cx + 0.01, cy]]]; // příliš malý: jen tečka
   return [arc(cx, cy, r, r, at + gapDeg / 2, at + 360 - gapDeg / 2, 24)];
+}
+
+// Bříško šířky w: z bodu (x0, yA) na dříku vodorovně, půlkruh doprava do výšky yB a zpět
+// k dříku, kde zůstane mezera šablony gU (jinak by vnitřek písmene vypadl z masky).
+function bowl(x0, yA, yB, w, gU) {
+  const ry = Math.abs(yA - yB) / 2, cy = (yA + yB) / 2, sgn = yA > yB ? 1 : -1;
+  // rovný kus u dříku musí pojmout mezeru; když na kruh nezbude místo, bříško se zúží do elipsy
+  const xc = x0 + Math.max(w - ry, gU + 0.3);
+  const rx = Math.max(1, Math.min(ry, x0 + w - xc));
+  return [[x0, yA], [xc, yA], ...arc(xc, cy, rx, ry, 90 * sgn, -90 * sgn, 14).slice(1), [x0 + gU, yB]];
 }
 
 // Každý znak: (gU = mezera šablony v jednotkách písma) => pole lomených čar.
@@ -49,6 +64,24 @@ const GLYPHS = {
   },
   W: () => [[[0, 10], [1.9, 0], [3.8, 7], [5.7, 0], [7.6, 10]]],
   H: () => [[[0, 0], [0, 10]], [[6, 0], [6, 10]], [[0, 5], [6, 5]]],
+  // oblouk napojený na dřík nahoře, dole končí mezerou šablony (bříško P, R, p, b)
+  P: (gU) => [[[0, 0], [0, 10]], bowl(0, 10, 4.6, 5.4, gU)],
+  R: (gU) => [[[0, 0], [0, 10]], bowl(0, 10, 4.6, 5.4, gU), [[Math.max(2.6, gU + 0.6), 4.6], [5.8, 0]]],
+  p: (gU) => [[[0, -3], [0, 7]], bowl(0, 7, 0, 4.8, gU)],
+  b: (gU) => [[[0, 0], [0, 10]], bowl(0, 0, 7, 4.8, gU)],
+  // dvoupatrové a: horní oblouk přechází v dřík, bříško visí na dříku a dole má mezeru
+  a: (gU) => [
+    [...arc(2.4, 4.8, 2.3, 2.2, 160, 0, 12), [4.7, 0]],
+    [[4.7, 3.7], [2, 3.7], ...arc(2, 1.85, 1.85, 1.85, 90, 270, 12).slice(1), [Math.max(2, 4.7 - gU), 0]],
+  ],
+  r: () => [[[0, 0], [0, 7]], arc(2.9, 4.2, 2.9, 2.8, 180, 62, 10)],
+  // O se dvěma mezerami (nahoře a dole)
+  O: (gU) => {
+    const g = Math.min(80, (2 * Math.asin(Math.min(1, gU / 7.4)) * 180) / Math.PI);
+    return [arc(3.7, 5, 3.7, 5, 90 + g / 2, 270 - g / 2, 16), arc(3.7, 5, 3.7, 5, 270 + g / 2, 450 - g / 2, 16)];
+  },
+  // dolní index 2 (CO₂); v textu symbolu lze psát i obyčejnou 2
+  '₂': () => [[...arc(1.75, 2.3, 1.55, 1.55, 160, -35, 12), [0, -1.6], [3.5, -1.6]]],
   '%': (gU) => {
     const gd = Math.min(359, (2 * Math.asin(Math.min(1, gU / 3.6)) * 180) / Math.PI);
     return [...ring(1.8, 8.2, 1.8, gd, 180), [[0.2, -0.2], [7.8, 10.2]], ...ring(6.2, 1.8, 1.8, gd, 0)];
@@ -61,12 +94,13 @@ export const SYMBOL_CHARS = Object.keys(GLYPHS).join('');
 export function layoutSymbol(text, { height, stroke }) {
   const s = height / 10; // mm na jednotku písma
   const gU = (stroke + 1.0) / s; // mezera šablony: 1 mm volného místa mezi tahy
-  const spacing = Math.max(stroke + 1.2, 0.18 * height);
+  const spacing = Math.max(stroke + 1.5, 0.2 * height);
   const lines = [];
   const bad = [];
   let x = 0;
   let first = true;
-  for (const ch of text) {
+  for (const ch0 of text) {
+    const ch = ch0 === '2' ? '₂' : ch0;
     const g = GLYPHS[ch];
     if (!g) { bad.push(ch); continue; }
     const polys = g(gU);
