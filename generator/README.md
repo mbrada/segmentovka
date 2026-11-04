@@ -51,6 +51,9 @@ Běží na https://segmentovka.miloslavbrada.cz
 - `export.js` – binární STL, 3MF, ZIP (deflate přes CompressionStream)
 - `worker.js` – výpočet ve Web Workeru
 - `page.html` – stránka (obsah ve tvaru pro Claude Artifact, bez `<head>`)
+- `consent.js` – Google Analytics (G-GX5DWNWRNJ) se souhlasem: Consent Mode v2 v základním režimu,
+  `gtag.js` se načte až po kliknutí na Přijmout; volba v `localStorage` na 12 měsíců, odvolání
+  odkazem Nastavení cookies v patičce (smaže cookies `_ga*`); `build.sh` ho vkládá jen do `dist/`
 - `manifold.js`, `manifold.wasm` – manifold-3d 3.5.4 (Apache-2.0, `manifold-LICENSE.txt`)
 - `build.sh` – složí samostatný web do `dist/`
 - `deploy.sh` – sestaví a nasadí `dist/` na server (`/srv/www/segmentovka`, nginx)

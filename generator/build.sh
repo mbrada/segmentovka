@@ -20,6 +20,7 @@ doc = f"""<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="icon" href="{favicon}">
 <style>:root{{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}}body{{margin:0;font:14px system-ui,sans-serif}}img{{max-width:100%}}[hidden]{{display:none!important}}</style>
+<script src="consent.js"></script>
 {head.strip()}
 </head>
 <body>
@@ -29,5 +30,5 @@ doc = f"""<!doctype html>
 """
 open('dist/index.html', 'w', encoding='utf-8').write(doc)
 EOF
-cp gen.js symbols.js split.js export.js worker.js manifold.js manifold.wasm manifold-LICENSE.txt dist/
+cp consent.js gen.js symbols.js split.js export.js worker.js manifold.js manifold.wasm manifold-LICENSE.txt dist/
 echo "dist/ připraven: $(du -sh dist | cut -f1)"
