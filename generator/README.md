@@ -72,8 +72,10 @@ Běží na https://segmentovka.miloslavbrada.cz
 - `build.sh` – složí samostatný web do `dist/`; přidá SEO hlavičku (canonical, Open Graph,
   JSON-LD WebApplication z `<title>` a description v `page.html`), `robots.txt` a `sitemap.xml`
 - `og.png` – náhled odkazu 1200 × 630; vzniká z `tools/og.mjs` (displej z generátoru) přes Inkscape
-- `deploy.sh` – sestaví a nasadí `dist/` na server (`/srv/www/segmentovka`, nginx);
-  službu zpětné vazby nasazuje zvlášť `zpetna-vazba/deploy.sh`
+
+Nasazení a konfigurace serveru nejsou součástí repozitáře (autor je má v soukromé složce `provoz/`,
+kterou `.gitignore` vynechává). Web je statický – stačí obsah `dist/` na libovolném HTTP serveru;
+zpětná vazba navíc potřebuje službu z `zpetna-vazba/` za reverzní proxy.
 
 ## Lokálně
 
@@ -92,16 +94,18 @@ ES moduly a WASM potřebují HTTP, z `file://` stránka nepoběží.
 
 ## Zpětná vazba
 
-Hlášení z formuláře nejsou v žádné databázi – každé je issue v soukromém repozitáři
-[autor/segmentovka](https://gitea.example.org/autor/segmentovka/issues) se štítkem `zpětná vazba`
-a `chyba` / `nápad` / `dotaz`. Zakládá je uživatel `segmentovka-bot` (typ bot, spolupracovník repozitáře
-s právem zápisu, token jen se scope `write:issue`), takže majiteli repozitáře přijde na každé hlášení
-e-mail od Gitea. V issue je zpráva, kontakt s odkazem na odpověď e-mailem, změněné parametry, celý
-`parametry.json` (jde načíst tlačítkem Načíst parametry…), upozornění generátoru a prohlížeč.
+Hlášení z formuláře nejsou v žádné databázi – každé je issue v soukromém repozitáři v Gitea se štítkem
+`zpětná vazba` a `chyba` / `nápad` / `dotaz`. Zakládá je samostatný uživatel typu bot (spolupracovník
+repozitáře s právem zápisu – bez něj nejdou štítky – a token jen se scope `write:issue`), takže majiteli
+repozitáře přijde na každé hlášení e-mail od Gitea. V issue je zpráva, kontakt s odkazem na odpověď
+e-mailem, změněné parametry, celý `parametry.json` (jde načíst tlačítkem Načíst parametry…), upozornění
+generátoru a prohlížeč. Štítky si služba při prvním hlášení založí sama.
 
-`zpetna-vazba/server.py` běží na server jako `segmentovka-zpetna-vazba.service` (`DynamicUser`, síť jen na
-localhost) na 127.0.0.1:24790 a nginx mu předává `POST /api/zpetna-vazba`; Gitea volá napřímo na
-127.0.0.1:3000. Proti spamu (bez CAPTCHA a třetích stran):
+`zpetna-vazba/server.py` (jen standardní knihovna Pythonu) poslouchá na 127.0.0.1:24790 a reverzní proxy
+mu předává `POST /api/zpetna-vazba` s hlavičkou `X-Real-IP`; token čte ze souboru od systemd
+(`LoadCredential`, `$CREDENTIALS_DIRECTORY/gitea-token`) nebo z `--token-file`. Když volá Gitea napřímo
+(např. `--gitea http://127.0.0.1:3000`), potřebuje `--gitea-public` s veřejnou adresou – Gitea podle ní
+skládá odkazy v e-mailech. Proti spamu (bez CAPTCHA a třetích stran):
 
 - skryté pole pro roboty – vyplněné se tváří jako odeslané, issue nevznikne
 - formulář musí být otevřený aspoň 2 s
@@ -109,25 +113,7 @@ localhost) na 127.0.0.1:24790 a nginx mu předává `POST /api/zpetna-vazba`; Gi
 - víc než 3 odkazy ve zprávě se odmítnou
 - stejná zpráva (typ, text bez ohledu na velikost písmen a mezery, e-mail) znovu do hodiny issue
   nezaloží a tváří se jako odeslaná – i dvojklik
-- 5 zpráv za 10 minut z jedné IP, 50 za den celkem; v nginx navíc 6 požadavků za minutu
+- 5 zpráv za 10 minut z jedné IP, 50 za den celkem; v proxy navíc omezení počtu požadavků
 - zpráva nejvýš 5000 znaků, požadavek 64 kB
 
-Kdyby spam přesto chodil, další stupeň je neviditelný proof-of-work v prohlížeči nebo Cloudflare Turnstile. Nasazení `zpetna-vazba/deploy.sh` (spustí testy, vymění kód a restartuje službu),
-log `journalctl -u segmentovka-zpetna-vazba`.
-
-Jednorázové nastavení na server (Gitea běží v Dockeru jako kontejner `gitea`):
-
-    # bot nemá heslo a přihlásit se nemůže, Gitea mu neposílá e-maily
-    gitea admin user create --user-type bot --username segmentovka-bot \
-      --email 'bot@example.org'
-    # spolupracovník s právem zápisu (štítky jde nastavit jen se zápisem): v Gitea Nastavení repozitáře →
-    # Spolupracovníci, nebo API s tokenem správce:
-    #   PUT /api/v1/repos/autor/segmentovka/collaborators/segmentovka-bot  {"permission": "write"}
-    install -d -m 700 /etc/segmentovka-zpetna-vazba
-    gitea admin user generate-access-token --username segmentovka-bot \
-      --token-name zpetna-vazba --scopes write:issue --raw > /etc/segmentovka-zpetna-vazba/gitea-token
-    chmod 600 /etc/segmentovka-zpetna-vazba/gitea-token
-
-Štítky si služba při prvním hlášení založí sama. Nginx config na serveru `deploy.sh` po certbotu
-nepřepisuje – blok `location = /api/zpetna-vazba` a `limit_req_zone` z `deploy/nginx.conf` jsou v něm
-doplněné ručně.
+Kdyby spam přesto chodil, další stupeň je neviditelný proof-of-work v prohlížeči nebo Cloudflare Turnstile.

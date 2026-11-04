@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Miloslav Brada
 """Zpětná vazba ze Segmentovky: přijme hlášení z webu a založí z něj issue v Gitea.
 
-Na server běží za nginx (POST /api/zpetna-vazba → 127.0.0.1:24790). Databáze žádná:
-hlášení jsou issues v soukromém repozitáři autor/segmentovka, zakládá je uživatel
-segmentovka-bot (typ bot – Gitea mu nic neposílá, majiteli repozitáře přijde e-mail).
-Token (scope write:issue) čte ze souboru od systemd (LoadCredential), v prostředí ani
-v logu není. Jen standardní knihovna Pythonu.
+Běží za reverzní proxy (POST /api/zpetna-vazba → 127.0.0.1:24790). Databáze žádná:
+hlášení jsou issues v soukromém repozitáři v Gitea, zakládá je uživatel typu bot
+(Gitea mu nic neposílá, majiteli repozitáře přijde e-mail). Token (scope write:issue)
+čte ze souboru od systemd (LoadCredential), v prostředí ani v logu není. Jen standardní
+knihovna Pythonu.
 
-    server.py serve --repo autor/segmentovka --origin https://segmentovka.miloslavbrada.cz
+    server.py serve --repo VLASTNÍK/REPO --gitea-public https://gitea.example.org \\
+                    --origin https://segmentovka.miloslavbrada.cz
     server.py serve --dry-run --static ../dist --port 8000   # lokálně: web i API, issue jen do logu
 """
 import argparse
@@ -191,19 +194,24 @@ def body_of(r, user_agent, now=None):
 # ---------- Gitea ----------
 
 class Gitea:
-    def __init__(self, url, repo, token, timeout=15):
+    def __init__(self, url, repo, token, public_url=None, timeout=15):
         self.base = f"{url.rstrip('/')}/api/v1/repos/{repo}"
         self.token = token
         self.timeout = timeout
         self.labels = {}
         self.lock = threading.Lock()
+        self.headers = {'Authorization': f'token {token}', 'Accept': 'application/json',
+                        'Content-Type': 'application/json', 'User-Agent': 'segmentovka-zpetna-vazba'}
+        # Gitea skládá odkazy v e-mailech podle adresy požadavku (PUBLIC_URL_DETECTION = auto);
+        # při volání napřímo na 127.0.0.1:3000 se proto tváříme jako nginx před veřejnou adresou.
+        if public_url:
+            pub = urllib.parse.urlsplit(public_url)
+            self.headers.update({'Host': pub.netloc, 'X-Forwarded-Proto': pub.scheme})
 
     def call(self, method, path, body=None):
         req = urllib.request.Request(
             self.base + path, method=method,
-            data=None if body is None else json.dumps(body).encode(),
-            headers={'Authorization': f'token {self.token}', 'Accept': 'application/json',
-                     'Content-Type': 'application/json', 'User-Agent': 'segmentovka-zpetna-vazba'})
+            data=None if body is None else json.dumps(body).encode(), headers=self.headers)
         with urllib.request.urlopen(req, timeout=self.timeout) as resp:
             return json.load(resp)
 
@@ -397,7 +405,9 @@ def main(argv=None):
     s.add_argument('--host', default='127.0.0.1')
     s.add_argument('--port', type=int, default=24790)
     s.add_argument('--gitea', default='http://127.0.0.1:3000')
-    s.add_argument('--repo', default='autor/segmentovka')
+    s.add_argument('--gitea-public', metavar='URL',
+                   help='veřejná adresa Gitea pro odkazy v e-mailech, když --gitea míří napřímo (např. https://gitea.example.org)')
+    s.add_argument('--repo', metavar='VLASTNÍK/REPO', help='repozitář pro issues (bez --dry-run povinné)')
     s.add_argument('--token-file', help='výchozí $CREDENTIALS_DIRECTORY/gitea-token (systemd LoadCredential)')
     s.add_argument('--origin', action='append', default=[], help='povolený Origin (lze opakovat); bez něj se nekontroluje')
     s.add_argument('--static', help='adresář webu, který služba také obslouží (lokální vývoj)')
@@ -406,6 +416,8 @@ def main(argv=None):
     if a.dry_run:
         gitea = DryRun()
     else:
+        if not a.repo:
+            ap.error('chybí --repo (nebo --dry-run)')
         path = a.token_file or os.path.join(os.environ.get('CREDENTIALS_DIRECTORY', ''), 'gitea-token')
         try:
             token = open(path, encoding='utf-8').read().strip()
@@ -413,7 +425,7 @@ def main(argv=None):
             sys.exit(f'token do Gitea nejde načíst: {e}')
         if not token:
             sys.exit(f'prázdný token v {path}')
-        gitea = Gitea(a.gitea, a.repo, token)
+        gitea = Gitea(a.gitea, a.repo, token, a.gitea_public)
     srv = make_server(a.host, a.port, gitea, a.origin, os.path.abspath(a.static) if a.static else None)
     log(f"zpětná vazba poslouchá na {a.host}:{a.port}{PATH} → {'dry-run' if a.dry_run else a.repo}")
     try:

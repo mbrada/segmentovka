@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Miloslav Brada
 """Testy služby zpětné vazby proti falešné Gitea: python3 zpetna-vazba/test_server.py"""
 import itertools
 import json
@@ -17,6 +19,7 @@ import server  # noqa: E402
 class FakeGitea(BaseHTTPRequestHandler):
     """Repozitář se štítky a issues v paměti; zaznamená každý požadavek."""
     calls = []
+    hosts = []
     labels = []
     fail = False
 
@@ -38,6 +41,7 @@ class FakeGitea(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
         FakeGitea.calls.append(('POST', self.path, body, self.headers.get('Authorization')))
+        FakeGitea.hosts.append((self.headers.get('Host'), self.headers.get('X-Forwarded-Proto')))
         if FakeGitea.fail:
             return self.send(500, {'message': 'chyba'})
         if self.path.endswith('/labels'):
@@ -71,10 +75,12 @@ def report(**kw):
 
 class Base(unittest.TestCase):
     def setUp(self):
-        FakeGitea.calls, FakeGitea.labels, FakeGitea.fail = [], [{'id': 1, 'name': 'zpětná vazba'}], False
+        FakeGitea.calls, FakeGitea.hosts, FakeGitea.fail = [], [], False
+        FakeGitea.labels = [{'id': 1, 'name': 'zpětná vazba'}]
         self.fake = ThreadingHTTPServer(('127.0.0.1', 0), FakeGitea)
         threading.Thread(target=self.fake.serve_forever, daemon=True).start()
-        gitea = server.Gitea(f'http://127.0.0.1:{self.fake.server_port}', 'autor/segmentovka', 'tajny-token')
+        gitea = server.Gitea(f'http://127.0.0.1:{self.fake.server_port}', 'autor/segmentovka', 'tajny-token',
+                             public_url='https://gitea.example.cz')
         self.srv = server.make_server('127.0.0.1', 0, gitea, origins=['https://segmentovka.miloslavbrada.cz'],
                                       limiter=server.Limiter(per_ip=3, per_day=10))
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()
@@ -102,6 +108,8 @@ class TestService(Base):
         [(_, path, body, auth)] = self.issues()
         self.assertEqual(path, '/api/v1/repos/autor/segmentovka/issues')
         self.assertEqual(auth, 'token tajny-token')
+        # odkazy v e-mailech od Gitea mají vést na veřejnou adresu, ne na 127.0.0.1
+        self.assertEqual(set(FakeGitea.hosts), {('gitea.example.cz', 'https')})
         self.assertEqual(body['title'], 'Chyba: Při rozložení 88:88 chybí')   # jen první řádek
         self.assertEqual(body['labels'], [1, 101])            # „zpětná vazba“ existoval, „chyba“ přibyl
         self.assertIn({'id': 101, 'name': 'chyba'}, FakeGitea.labels)

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Miloslav Brada
+//
 // Zpětná vazba: tlačítko pod častými otázkami a v patičce otevře formulář, který zprávu pošle
 // na api/zpetna-vazba (služba v zpetna-vazba/ z ní založí issue v Gitea). Jen pro samostatný web:
 // build.sh skript vloží do <head>; v Claude Artifact (page.html) žádný backend není.
@@ -95,9 +98,6 @@ let openedAt = 0;
 let opener = null;
 
 function build() {
-  const st = document.createElement('style');
-  st.textContent = css;
-  document.head.appendChild(st);
   dlg = document.createElement('dialog');
   dlg.className = 'fb';
   dlg.setAttribute('aria-labelledby', 'fb-t');
@@ -233,6 +233,10 @@ function button(cls, label) {
 }
 
 function init() {
+  // styly hned, nejen s dialogem: tlačítko pod otázkami a patička je potřebují od začátku
+  const st = document.createElement('style');
+  st.textContent = css;
+  document.head.appendChild(st);
   const faq = document.querySelector('.about-faq');
   if (faq) {
     const cta = document.createElement('div');
