@@ -1,0 +1,859 @@
+<title>Generátor segmentovky</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Generátor 3D tisknutelného pouzdra pro 7segmentový displej z modulů WS2812B: vlastní rozložení, difuzory a zadní krabička.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Rozvržení: pracovní stůl – vlevo panel parametrů, vpravo náhled modelu, pod ním rozměry, export a mapa LED. */
+:root {
+  --bg: #e7eae7;
+  --panel: #f7f8f6;
+  --ink: #161a18;
+  --muted: #59625d;
+  --line: #cbd2cd;
+  --led: #d93b1b;
+  --led-ink: #ffffff;
+  --seg-off: #d0d7d2;
+  --view: #dbe0dc;
+  --display: #0d0f0e;
+  --display-ink: #ff5b37;
+  --warn-bg: #f9e8c8;
+  --warn-ink: #5e3b00;
+  --focus: #1d6fd6;
+  --font-ui: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --r: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101312; --panel: #181c1a; --ink: #e5eae7; --muted: #96a09b; --line: #2a302d;
+    --led: #ff5b37; --led-ink: #1d0802; --seg-off: #242a27; --view: #0c0f0e;
+    --display: #050606; --display-ink: #ff6a48; --warn-bg: #36280c; --warn-ink: #f3d49c; --focus: #6aa8ff;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101312; --panel: #181c1a; --ink: #e5eae7; --muted: #96a09b; --line: #2a302d;
+  --led: #ff5b37; --led-ink: #1d0802; --seg-off: #242a27; --view: #0c0f0e;
+  --display: #050606; --display-ink: #ff6a48; --warn-bg: #36280c; --warn-ink: #f3d49c; --focus: #6aa8ff;
+  color-scheme: dark;
+}
+html, body { background: var(--bg); color: var(--ink); }
+body {
+  font-family: var(--font-ui); font-size: 15px; line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 18px 40px;
+}
+*, *::before, *::after { box-sizing: border-box; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+[hidden] { display: none !important; }
+button, input, select { font: inherit; color: inherit; }
+h1, h2, h3 { text-wrap: balance; margin: 0; }
+
+.app { max-width: 1480px; margin: 0 auto; display: grid; gap: 18px; }
+
+/* ---------- hlavička ---------- */
+.top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); gap: 18px 28px; align-items: end; }
+.brand h1 { font-size: 30px; font-weight: 800; font-stretch: 112%; letter-spacing: -0.01em; line-height: 1.05; display: flex; align-items: center; gap: 12px; }
+.brand h1 svg { width: 22px; height: 36px; flex: none; }
+.brand p { margin: 8px 0 0; color: var(--muted); max-width: 58ch; }
+.layout-box { display: grid; gap: 8px; min-width: 0; }
+.layout-box label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.layout-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: stretch; }
+#p-layout {
+  flex: 1 1 220px; min-width: 0; background: var(--display); color: var(--display-ink);
+  font-family: var(--font-mono); font-weight: 600; font-size: 30px; letter-spacing: 0.18em;
+  border: 1px solid var(--line); border-radius: var(--r); padding: 6px 14px; caret-color: var(--display-ink);
+  text-shadow: 0 0 12px color-mix(in srgb, var(--display-ink) 55%, transparent);
+}
+.presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 4px 11px;
+  font-family: var(--font-mono); font-size: 13px; cursor: pointer;
+}
+.chip:hover { border-color: var(--led); }
+.chip[aria-pressed="true"] { background: var(--led); color: var(--led-ink); border-color: var(--led); }
+.legend { font-size: 13px; color: var(--muted); margin: 0; }
+.legend code { font-family: var(--font-mono); color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
+
+/* ---------- hlavní mřížka ---------- */
+.grid { display: grid; grid-template-columns: 340px minmax(0, 1fr); grid-template-areas: "params stage" "params out"; gap: 18px; align-items: start; }
+.stage { grid-area: stage; min-width: 0; }
+.params { grid-area: params; min-width: 0; }
+.out { grid-area: out; min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 18px; align-items: start; }
+@media (min-width: 961px) {
+  .params { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); max-height: calc(100vh - 24px); overflow: auto; padding-right: 4px; }
+}
+@media (max-width: 960px) {
+  .top { grid-template-columns: minmax(0, 1fr); }
+  .grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: "stage" "params" "out"; }
+}
+
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); }
+
+/* ---------- náhled ---------- */
+.stage-head { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.tabs, .tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.tab, .tool {
+  border: 1px solid transparent; background: none; border-radius: 5px; padding: 5px 10px; cursor: pointer; font-size: 14px;
+}
+.tab[aria-selected="true"] { background: var(--ink); color: var(--panel); }
+.tab:not([aria-selected="true"]):hover, .tool:hover { border-color: var(--line); }
+.tool[aria-pressed="true"] { border-color: var(--led); color: var(--led); }
+.toggle { display: inline-flex; gap: 6px; align-items: center; font-size: 14px; padding: 5px 6px; cursor: pointer; user-select: none; }
+.toggle input { accent-color: var(--led); width: 15px; height: 15px; margin: 0; }
+.sep { width: 1px; align-self: stretch; background: var(--line); margin: 2px 4px; }
+.viewport { position: relative; aspect-ratio: 16 / 10; max-height: 72vh; min-height: 300px; width: 100%; max-width: 100%; background: var(--view); border-radius: 0 0 var(--r) var(--r); overflow: hidden; }
+.viewport canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.front-pane { position: absolute; inset: 0; display: grid; place-items: center; padding: 18px; }
+.front-pane svg { width: 100%; height: 100%; }
+.status {
+  position: absolute; left: 10px; bottom: 10px; font-family: var(--font-mono); font-size: 12px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px; max-width: calc(100% - 20px);
+}
+.status.busy::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--led); margin-right: 7px; animation: blink 0.8s steps(2) infinite; }
+.status.err { color: var(--led); }
+@keyframes blink { 50% { opacity: 0.2; } }
+@media (prefers-reduced-motion: reduce) { .status.busy::before { animation: none; } }
+
+/* ---------- parametry ---------- */
+.params details { border-bottom: 1px solid var(--line); }
+.params details:last-of-type { border-bottom: 0; }
+.params summary {
+  list-style: none; cursor: pointer; padding: 11px 14px; display: flex; justify-content: space-between; align-items: center;
+  font-weight: 700; font-stretch: 105%;
+}
+.params summary::-webkit-details-marker { display: none; }
+.params summary::after { content: "+"; font-family: var(--font-mono); color: var(--muted); }
+.params details[open] > summary::after { content: "–"; }
+.params .changed { font-family: var(--font-mono); font-size: 11px; color: var(--led); font-weight: 500; margin-left: auto; margin-right: 10px; }
+.rows { display: grid; gap: 7px; padding: 2px 14px 14px; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+.row label { font-size: 14px; color: var(--ink); }
+.row label small { display: block; color: var(--muted); font-size: 12px; line-height: 1.3; }
+.row.is-changed label { font-weight: 600; }
+.num { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); }
+.num input { width: 5.6em; border: 0; background: none; padding: 4px 6px; font-family: var(--font-mono); font-size: 14px; text-align: right; font-variant-numeric: tabular-nums; }
+.num span { font-family: var(--font-mono); font-size: 12px; color: var(--muted); padding-right: 7px; min-width: 2.2em; }
+.row select, .row input[type="text"] { border: 1px solid var(--line); border-radius: 5px; background: var(--bg); padding: 4px 6px; max-width: 11em; }
+.row input[type="text"] { font-family: var(--font-mono); width: 8.5em; }
+.row input[type="checkbox"] { accent-color: var(--led); width: 17px; height: 17px; justify-self: end; }
+.note { font-size: 13px; color: var(--muted); margin: 2px 0 0; }
+.params-foot { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--line); }
+
+.btn { border: 1px solid var(--line); background: var(--bg); border-radius: 5px; padding: 6px 12px; cursor: pointer; font-size: 14px; }
+.btn:hover:not(:disabled) { border-color: var(--ink); }
+.btn.primary { background: var(--led); border-color: var(--led); color: var(--led-ink); font-weight: 700; }
+.btn:disabled { opacity: 0.5; cursor: progress; }
+
+/* ---------- výstupy ---------- */
+.out .card { padding: 14px 16px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.out h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 700; }
+.facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; margin: 0; }
+.facts dt { color: var(--muted); font-size: 14px; }
+.facts dd { margin: 0; font-variant-numeric: tabular-nums; }
+.facts dd b { font-family: var(--font-mono); font-weight: 600; }
+.warn { grid-column: 1 / -1; background: var(--warn-bg); color: var(--warn-ink); border-radius: var(--r); padding: 10px 14px; display: grid; gap: 4px; }
+.warn p { margin: 0; }
+.export-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.code-wrap { overflow-x: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 5px; }
+pre { margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.5; }
+.tips { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 14px; }
+.tips li::marker { color: var(--led); }
+.small { font-size: 13px; color: var(--muted); margin: 0; }
+
+/* čelní pohled (SVG) */
+.fp-case { fill: var(--display); stroke: var(--line); stroke-width: 0.6; }
+.fp-post { fill: none; stroke: var(--muted); stroke-width: 0.35; stroke-dasharray: 1.2 1; }
+.fp-hole { fill: none; stroke: var(--muted); stroke-width: 0.35; }
+.fp-sock { fill: none; stroke: var(--muted); stroke-width: 0.3; stroke-dasharray: 0.8 1; opacity: 0.7; }
+.fp-seg { fill: var(--led); }
+.fp-num { fill: var(--led-ink); font-family: var(--font-mono); font-weight: 600; }
+.fp-cap { fill: var(--muted); font-family: var(--font-ui); }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+} }
+</script>
+
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <h1><svg viewBox="0 0 22 36" aria-hidden="true"><g class="fp-seg"><path d="M5 2h12l-2 3H7z"/><path d="M18 4l1 1v11l-2 1-1-2V7z" opacity=".35"/><path d="M4 4l2 3v8l-1 2-2-1V5z"/><path d="M6 17h10l2 1-2 1H6l-2-1z"/><path d="M18 19l1 1v11l-1 1-2-2v-9z"/><path d="M4 19l2 2v9l-2 2-1-1V20z" opacity=".35"/><path d="M7 31h8l2 3H5z"/></g></svg>Segmentovka</h1>
+      <p>Pouzdro pro 7segmentový displej z modulů WS2812B. Modul se zezadu jen zacvakne do lůžka a světlovod vede světlo k segmentu. Výchozí hodnoty odpovídají osvědčeným hodinám 88:88.</p>
+    </div>
+    <div class="layout-box">
+      <label for="p-layout">Rozložení displeje</label>
+      <div class="layout-row">
+        <input id="p-layout" type="text" autocomplete="off" spellcheck="false" maxlength="24" aria-describedby="layout-legend">
+      </div>
+      <div class="presets" id="presets" aria-label="Předvolby rozložení"></div>
+      <p class="legend" id="layout-legend"><code>8</code> číslice · <code>1</code> úzká jednička · <code>-</code> mínus · <code>:</code> dvojtečka · <code>.</code> desetinná tečka · <code>°</code> stupeň · mezera</p>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section class="stage card" aria-label="Náhled">
+      <div class="stage-head">
+        <div class="tabs" role="tablist">
+          <button class="tab" role="tab" id="tab-3d" aria-selected="true" aria-controls="viewport">3D model</button>
+          <button class="tab" role="tab" id="tab-front" aria-selected="false" aria-controls="viewport">Čelní pohled a pořadí LED</button>
+        </div>
+        <div class="tools" id="tools3d">
+          <button class="tool" data-view="back" aria-pressed="true">Zezadu</button>
+          <button class="tool" data-view="front" aria-pressed="false">Zepředu</button>
+          <button class="tool" data-view="iso" aria-pressed="false">Šikmo</button>
+          <span class="sep" aria-hidden="true"></span>
+          <label class="toggle"><input type="checkbox" id="v-diff" checked>Difuzory</label>
+          <label class="toggle"><input type="checkbox" id="v-lid">Krabička</label>
+          <label class="toggle"><input type="checkbox" id="v-cut">Řez</label>
+        </div>
+      </div>
+      <div class="viewport" id="viewport">
+        <div class="front-pane" id="front-pane" hidden></div>
+        <div class="status busy" id="status" role="status">Načítám geometrické jádro…</div>
+      </div>
+    </section>
+
+    <aside class="params card" id="params" aria-label="Parametry"></aside>
+
+    <section class="out">
+      <div class="warn" id="warnings" hidden></div>
+      <div class="card">
+        <h2>Rozměry a díly</h2>
+        <dl class="facts" id="facts"></dl>
+      </div>
+      <div class="card">
+        <h2>Export pro tisk</h2>
+        <div class="export-btns" id="export-btns">
+          <button class="btn primary" id="dl-zip" disabled>Stáhnout vše (ZIP)</button>
+          <button class="btn" data-dl="case" disabled>Pouzdro STL</button>
+          <button class="btn" data-dl="diffuser" disabled>Difuzory STL</button>
+          <button class="btn" data-dl="lid" disabled>Krabička STL</button>
+          <button class="btn" data-dl="3mf" disabled>3MF</button>
+        </div>
+        <p class="small" id="export-note">ZIP obsahuje STL všech dílů, 3MF (pouzdro s difuzory jako dva díly jednoho objektu), mapu LED a parametry.</p>
+        <ul class="tips">
+          <li>Pouzdro tiskněte čelem dolů, podpěry nejsou potřeba.</li>
+          <li>Difuzory: 1 mm bílého nebo průsvitného PETG/PLA. S AMS nastavte vůli 0 a v 3MF jim přiřaďte jiný filament – vytisknou se rovnou v pouzdře.</li>
+          <li>Krabička se tiskne zadní deskou dolů.</li>
+        </ul>
+        <p class="export-msg small" id="export-msg" role="status"></p>
+      </div>
+      <div class="card">
+        <h2>Mapa LED pro firmware</h2>
+        <div class="code-wrap"><pre id="ledmap"></pre></div>
+        <div class="export-btns"><button class="btn" id="copy-map">Zkopírovat</button></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
+import { DEFAULTS, computeLayout, lidToPrint, ledMap } from './gen.js';
+import { stl, threeMF, zip } from './export.js';
+
+const PRESETS = [
+  ['88:88', 'hodiny'], ['88:88:88', 'hodiny se sekundami'], ['-8:8:8', 'odpočet'], ['88.88', 'desetinné číslo'],
+  ['188', 'do 199'], ['-88°', 'teploměr'], ['8888', 'počítadlo'],
+];
+
+// [klíč, popis, jednotka | typ, min, max, krok, nápověda]
+const GROUPS = [
+  { id: 'digits', title: 'Číslice', open: true, items: [
+    ['digitH', 'Výška číslice', 'mm', 10, 400, 0.5],
+    ['digitW', 'Šířka číslice', 'mm', 5, 300, 0.5],
+    ['segW', 'Tloušťka segmentu', 'mm', 2, 40, 0.5],
+    ['gap', 'Mezera mezi segmenty', 'mm', 0, 10, 0.01, 'kolmo mezi šikmými konci'],
+    ['slant', 'Sklon číslic', '°', -20, 20, 0.5, 'kladný naklání doprava'],
+    ['digitGap', 'Mezera mezi číslicemi', 'mm', 0, 60, 0.5],
+    ['colonW', 'Šířka pole dvojtečky', 'mm', 5, 80, 0.5],
+    ['dpW', 'Šířka pole desetinné tečky', 'mm', 3, 60, 0.5],
+    ['dotSize', 'Velikost tečky', 'mm', 2, 30, 0.5],
+    ['dotShape', 'Tvar tečky', 'select', [['diamond', 'kosočtverec'], ['circle', 'kruh'], ['square', 'čtverec']]],
+  ] },
+  { id: 'case', title: 'Pouzdro', items: [
+    ['margin', 'Okraj kolem číslic', 'mm', 2, 60, 0.5],
+    ['depth', 'Celková hloubka', 'mm', 15, 150, 0.5],
+    ['wall', 'Boční stěna', 'mm', 1, 10, 0.1],
+    ['front', 'Čelní deska', 'mm', 1, 10, 0.1],
+    ['chamfer', 'Sražení přední hrany', 'mm', 0, 3, 0.1],
+    ['tubeWall', 'Stěna světlovodu', 'mm', 0.8, 4, 0.1],
+    ['tubeEndD', 'Průměr konce světlovodu', 'mm', 4, 30, 0.1],
+    ['extraPosts', 'Sloupky i u dvojtečky', 'bool', 'u dlouhých displejů bez dvojtečky uprostřed'],
+    ['postSize', 'Rohový sloupek', 'mm', 6, 30, 0.5],
+    ['midPostW', 'Šířka vnitřního sloupku', 'mm', 5, 20, 0.5],
+    ['screwD', 'Otvor pro šroub', 'mm', 1.5, 6, 0.1, '2,9 mm pro samořezný M3'],
+    ['screwDepth', 'Hloubka otvoru', 'mm', 3, 150, 0.5],
+  ] },
+  { id: 'socket', title: 'Lůžko modulu WS2812B', items: [
+    ['modD', 'Průměr lůžka', 'mm', 5, 30, 0.05, 'pro kulatý modul ⌀ 10 mm'],
+    ['ringH', 'Výška pružného kroužku', 'mm', 0.5, 8, 0.1],
+    ['ringWall', 'Stěna kroužku', 'mm', 0.8, 4, 0.1],
+    ['slotW', 'Drážka v kroužku', 'mm', 0, 20, 0.1, 'rozdělí kroužek na dva pružné oblouky'],
+    ['lip', 'Zobáček pojistky', 'mm', 0, 1.5, 0.05, '0 = držení jen třením jako v originále'],
+    ['pcbT', 'Tloušťka desky modulu', 'mm', 0.6, 3, 0.1, 'jen pro zobáček'],
+    ['pocket', 'Kapsa pod deskou', 'mm', 3, 20, 0.1],
+    ['pocketH', 'Hloubka kapsy', 'mm', 0, 5, 0.1],
+    ['windowSize', 'Okénko pro LED 5050', 'mm', 2, 15, 0.1],
+    ['windowH', 'Výška okénka', 'mm', 0, 10, 0.1],
+    ['coneH', 'Přechod k okénku', 'mm', 0, 10, 0.05],
+    ['backSpace', 'Místo za moduly', 'mm', 0, 60, 0.5, 'pro dráty mezi moduly'],
+  ] },
+  { id: 'diff', title: 'Difuzory', items: [
+    ['recessDepth', 'Hloubka vybrání v čele', 'mm', 0, 3, 0.1],
+    ['recessInset', 'Osazení pod difuzorem', 'mm', 0, 3, 0.1],
+    ['diffuser', 'Generovat difuzory', 'bool'],
+    ['diffClear', 'Vůle difuzoru', 'mm', 0, 1, 0.05, '0 pro tisk v pouzdře s AMS'],
+    ['diffT', 'Tloušťka difuzoru', 'mm', 0.2, 3, 0.1],
+  ] },
+  { id: 'lid', title: 'Zadní krabička', items: [
+    ['lid', 'Generovat krabičku', 'bool'],
+    ['lidDepth', 'Hloubka krabičky', 'mm', 5, 120, 0.5, 'místo pro ESP a zdroj'],
+    ['lidWall', 'Stěna', 'mm', 1, 6, 0.1],
+    ['lidPlate', 'Zadní deska', 'mm', 1, 6, 0.1],
+    ['lidScrewD', 'Průchod pro šroub', 'mm', 2, 6, 0.1],
+    ['lidHeadD', 'Otvor pro hlavu šroubu', 'mm', 4, 12, 0.1],
+    ['lidClamp', 'Dno pod hlavou šroubu', 'mm', 1, 10, 0.5],
+    ['usb', 'Otvor pro kabel', 'select', [['right', 'vpravo'], ['left', 'vlevo'], ['bottom', 'dole'], ['none', 'bez otvoru']]],
+    ['usbW', 'Šířka otvoru', 'mm', 3, 40, 0.5],
+    ['usbH', 'Výška otvoru', 'mm', 3, 30, 0.5],
+    ['keyholes', 'Otvory na zavěšení', 'bool'],
+  ] },
+  { id: 'wire', title: 'Zapojení a kvalita', items: [
+    ['segOrder', 'Pořadí segmentů v číslici', 'text', 'např. abcdefg nebo gfedcba'],
+    ['quality', 'Hladkost oblouků', 'seg.', 16, 96, 4],
+  ] },
+];
+
+const STORE_KEY = 'segmentovka.params.v1';
+const $ = (s) => document.querySelector(s);
+const fmt = (v, d = 1) => Number(v).toLocaleString('cs-CZ', { maximumFractionDigits: d });
+
+let params = loadParams();
+let L = null;
+let built = null;
+
+function loadParams() {
+  try {
+    const s = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+    if (s && typeof s === 'object') return sanitize({ ...DEFAULTS, ...s });
+  } catch (_) { /* úložiště nedostupné */ }
+  return { ...DEFAULTS };
+}
+function saveParams() { try { localStorage.setItem(STORE_KEY, JSON.stringify(params)); } catch (_) { /* nevadí */ } }
+function sanitize(p) {
+  const out = { ...DEFAULTS };
+  for (const k of Object.keys(DEFAULTS)) {
+    const d = DEFAULTS[k], v = p[k];
+    if (typeof d === 'number') { const n = Number(v); out[k] = Number.isFinite(n) ? n : d; }
+    else if (typeof d === 'boolean') out[k] = typeof v === 'boolean' ? v : d;
+    else out[k] = typeof v === 'string' ? v : d;
+  }
+  return out;
+}
+
+// ---------- ovládací prvky ----------
+function buildParamsUI() {
+  const root = $('#params');
+  root.innerHTML = '';
+  for (const g of GROUPS) {
+    const det = document.createElement('details');
+    det.open = !!g.open;
+    det.dataset.group = g.id;
+    const sum = document.createElement('summary');
+    sum.innerHTML = `<span>${g.title}</span><span class="changed"></span>`;
+    det.append(sum);
+    const rows = document.createElement('div');
+    rows.className = 'rows';
+    for (const it of g.items) {
+      const [key, label, kind] = it;
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.dataset.key = key;
+      const id = `p-${key}`;
+      let help = '';
+      let ctl = '';
+      if (kind === 'select') {
+        ctl = `<select id="${id}">${it[3].map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select>`;
+      } else if (kind === 'bool') {
+        help = it[3] || '';
+        ctl = `<input type="checkbox" id="${id}">`;
+      } else if (kind === 'text') {
+        help = it[3] || '';
+        ctl = `<input type="text" id="${id}" spellcheck="false" autocomplete="off">`;
+      } else {
+        const [, , unit, min, max, step, h] = it;
+        help = h || '';
+        ctl = `<span class="num"><input type="number" id="${id}" min="${min}" max="${max}" step="${step}" inputmode="decimal"><span>${unit}</span></span>`;
+      }
+      row.innerHTML = `<label for="${id}">${label}${help ? `<small>${help}</small>` : ''}</label>${ctl}`;
+      rows.append(row);
+    }
+    det.append(rows);
+    root.append(det);
+  }
+  const foot = document.createElement('div');
+  foot.className = 'params-foot';
+  foot.innerHTML = `<button class="btn" id="reset">Výchozí hodnoty</button>
+    <button class="btn" id="load-json">Načíst parametry…</button>
+    <input type="file" id="load-file" accept=".json,application/json" hidden>`;
+  root.append(foot);
+
+  root.addEventListener('input', onParamInput);
+  root.addEventListener('change', onParamInput);
+  $('#reset').addEventListener('click', () => { params = { ...DEFAULTS }; syncInputs(); changed(); });
+  $('#load-json').addEventListener('click', () => $('#load-file').click());
+  $('#load-file').addEventListener('change', async (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    try {
+      params = sanitize({ ...DEFAULTS, ...JSON.parse(await f.text()) });
+      syncInputs(); changed();
+      setExportMsg(`Načteny parametry ze souboru ${f.name}.`);
+    } catch (_) {
+      setExportMsg('Soubor se nepodařilo načíst. Vyberte parametry.json z exportovaného ZIPu.');
+    }
+    e.target.value = '';
+  });
+}
+
+function onParamInput(e) {
+  const el = e.target;
+  if (!el.id || !el.id.startsWith('p-')) return;
+  const key = el.id.slice(2);
+  const d = DEFAULTS[key];
+  if (typeof d === 'number') {
+    if (el.value === '' || !Number.isFinite(Number(el.value))) return;
+    params[key] = Number(el.value);
+  } else if (typeof d === 'boolean') params[key] = el.checked;
+  else params[key] = el.value;
+  changed();
+}
+
+function syncInputs() {
+  for (const k of Object.keys(DEFAULTS)) {
+    const el = document.getElementById(`p-${k}`);
+    if (!el) continue;
+    if (el.type === 'checkbox') el.checked = !!params[k];
+    else if (document.activeElement !== el) el.value = params[k];
+  }
+  markChanged();
+  markPresets();
+}
+
+function markChanged() {
+  for (const det of document.querySelectorAll('#params details')) {
+    let n = 0;
+    for (const row of det.querySelectorAll('.row')) {
+      const k = row.dataset.key;
+      const ch = params[k] !== DEFAULTS[k];
+      row.classList.toggle('is-changed', ch);
+      if (ch) n++;
+    }
+    det.querySelector('.changed').textContent = n ? `${n} změn${n === 1 ? 'a' : n < 5 ? 'y' : ''}` : '';
+  }
+}
+
+function buildPresets() {
+  const box = $('#presets');
+  for (const [lay, title] of PRESETS) {
+    const b = document.createElement('button');
+    b.className = 'chip';
+    b.type = 'button';
+    b.textContent = lay;
+    b.title = title;
+    b.setAttribute('aria-pressed', 'false');
+    b.addEventListener('click', () => { params.layout = lay; $('#p-layout').value = lay; changed(); });
+    box.append(b);
+  }
+}
+function markPresets() {
+  for (const b of document.querySelectorAll('#presets .chip')) b.setAttribute('aria-pressed', String(b.textContent === params.layout));
+}
+
+// ---------- přepočet ----------
+let buildTimer = 0;
+function changed() {
+  saveParams();
+  markChanged();
+  markPresets();
+  L = computeLayout(params);
+  renderFront();
+  renderFacts();
+  renderWarnings();
+  $('#ledmap').textContent = ledMap(L);
+  setExportEnabled(false);
+  setStatus('Generuji model…', 'busy');
+  clearTimeout(buildTimer);
+  buildTimer = setTimeout(() => engine.run({ ...params }), 220);
+}
+
+// ---------- výpočetní jádro (worker, záložně hlavní vlákno) ----------
+const engine = {
+  seq: 0, worker: null, inline: null, last: null,
+  init() {
+    try {
+      this.worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+      this.worker.onmessage = (e) => this.done(e.data);
+      this.worker.onerror = (e) => { if (e.preventDefault) e.preventDefault(); this.worker = null; if (this.last) this.runInline(this.last.id, this.last.params); };
+    } catch (_) { this.worker = null; }
+  },
+  run(p) {
+    const id = ++this.seq;
+    this.last = { id, params: p };
+    if (this.worker) this.worker.postMessage({ id, params: p });
+    else this.runInline(id, p);
+  },
+  async runInline(id, p) {
+    try {
+      if (!this.inline) {
+        this.inline = (async () => {
+          const [{ default: Module }, gen] = await Promise.all([import('./manifold.js'), import('./gen.js')]);
+          const M = await Module(); M.setup();
+          return { M, gen };
+        })();
+      }
+      const { M, gen } = await this.inline;
+      await new Promise((r) => setTimeout(r, 30));
+      if (id !== this.seq) return;
+      const t0 = performance.now();
+      const R = gen.buildModels(M, gen.computeLayout(p));
+      this.done({ id, ok: true, R, ms: performance.now() - t0 });
+    } catch (e) {
+      this.done({ id, ok: false, error: String((e && e.message) || e) });
+    }
+  },
+  done(msg) {
+    if (msg.id !== this.seq) return;
+    if (!msg.ok) {
+      setStatus(`Model se nepodařilo vytvořit: ${msg.error}`, 'err');
+      return;
+    }
+    built = { L: computeLayout(this.last.params), R: msg.R, params: { ...this.last.params } };
+    viewer.setModels(built);
+    const tris = Object.values(msg.R).reduce((s, m) => s + m.tri.length / 3, 0);
+    setStatus(`Hotovo za ${fmt(msg.ms / 1000, 2)} s · ${tris.toLocaleString('cs-CZ')} trojúhelníků`);
+    setExportEnabled(true);
+  },
+};
+
+function setStatus(text, cls = '') {
+  const s = $('#status');
+  s.textContent = text;
+  s.className = `status ${cls}`;
+}
+
+// ---------- 3D náhled ----------
+const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const viewer = {
+  init() {
+    const host = $('#viewport');
+    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.localClippingEnabled = true;
+    host.prepend(this.renderer.domElement);
+    this.scene = new THREE.Scene();
+    this.camera = new THREE.PerspectiveCamera(32, 1.6, 1, 5000);
+    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.enableDamping = true;
+    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x3a3f3c, 1.6));
+    const d1 = new THREE.DirectionalLight(0xffffff, 2.2); d1.position.set(-1, 1.4, -1.6); this.scene.add(d1);
+    const d2 = new THREE.DirectionalLight(0xffffff, 1.8); d2.position.set(1.2, 1.6, 1.4); this.scene.add(d2);
+    this.group = new THREE.Group();
+    this.scene.add(this.group);
+    this.plane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0);
+    this.mats = {
+      case: new THREE.MeshStandardMaterial({ color: 0x2c302e, roughness: 0.78, metalness: 0, side: THREE.DoubleSide }),
+      diffuser: new THREE.MeshStandardMaterial({ color: 0xffb49c, roughness: 0.5, emissive: 0xff3d14, emissiveIntensity: 0.75, side: THREE.DoubleSide }),
+      lid: new THREE.MeshStandardMaterial({ color: 0x4a504d, roughness: 0.8, side: THREE.DoubleSide }),
+    };
+    this.meshes = {};
+    this.view = 'back';
+    new ResizeObserver(() => this.resize()).observe(host);
+    this.applyTheme();
+    const loop = () => { this.controls.update(); this.renderer.render(this.scene, this.camera); requestAnimationFrame(loop); };
+    loop();
+  },
+  applyTheme() {
+    if (!this.renderer) return;
+    this.renderer.setClearColor(new THREE.Color(cssVar('--view') || '#dbe0dc'));
+  },
+  resize() {
+    const host = $('#viewport');
+    const w = host.clientWidth, h = host.clientHeight;
+    if (!w || !h) return;
+    this.renderer.setSize(w, h, false);
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+  },
+  setModels({ L: lay, R }) {
+    const first = !this.box;
+    for (const m of Object.values(this.meshes)) { this.group.remove(m); m.geometry.dispose(); }
+    this.meshes = {};
+    const p = lay.p;
+    for (const [k, mesh] of Object.entries(R)) {
+      let g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(mesh.vert, 3));
+      g.setIndex(new THREE.BufferAttribute(mesh.tri, 1));
+      g = toCreasedNormals(g, Math.PI / 5);
+      const m = new THREE.Mesh(g, this.mats[k]);
+      if (k === 'lid') m.position.z = 30;
+      this.meshes[k] = m;
+      this.group.add(m);
+    }
+    const prevSize = this.box ? [this.box.W, this.box.H, this.box.D] : null;
+    this.box = { W: lay.caseW, H: lay.caseH, D: p.depth };
+    const f = lay.els.find((e) => e.name === 'f') || lay.els.find((e) => e.name === 'b');
+    this.plane.constant = f ? f.c[1] : lay.caseH / 2;
+    this.applyToggles();
+    const resized = !prevSize || Math.abs(prevSize[0] - this.box.W) > 1 || Math.abs(prevSize[1] - this.box.H) > 1 || Math.abs(prevSize[2] - this.box.D) > 1;
+    if (first || resized) this.setView(this.view);
+  },
+  applyToggles() {
+    const cut = $('#v-cut').checked;
+    for (const m of Object.values(this.mats)) { m.clippingPlanes = cut ? [this.plane] : []; m.needsUpdate = true; }
+    if (this.meshes.diffuser) this.meshes.diffuser.visible = $('#v-diff').checked;
+    if (this.meshes.lid) this.meshes.lid.visible = $('#v-lid').checked;
+  },
+  setView(name) {
+    this.view = name;
+    for (const b of document.querySelectorAll('[data-view]')) b.setAttribute('aria-pressed', String(b.dataset.view === name));
+    if (!this.box) return;
+    const { W, H, D } = this.box;
+    const c = new THREE.Vector3(W / 2, H / 2, D / 2);
+    const r = Math.hypot(W, H, D) / 2;
+    const dist = (r / Math.sin(THREE.MathUtils.degToRad(this.camera.fov / 2))) * 0.92;
+    const dirs = {
+      front: new THREE.Vector3(0, 0, -1),
+      back: new THREE.Vector3(-0.55, 0.45, 1),
+      iso: new THREE.Vector3(0.6, 0.55, -1),
+      cut: new THREE.Vector3(-0.35, 1.1, 0.75),
+    };
+    const dir = (dirs[name] || dirs.back).clone().normalize();
+    this.camera.position.copy(c).addScaledVector(dir, dist);
+    this.camera.up.set(0, 1, 0);
+    this.controls.target.copy(c);
+    this.camera.near = dist / 50; this.camera.far = dist * 10;
+    this.camera.updateProjectionMatrix();
+    this.controls.update();
+  },
+};
+
+// ---------- čelní pohled ----------
+function renderFront() {
+  const pane = $('#front-pane');
+  if (!L) return;
+  const W = L.caseW, H = L.caseH, p = L.p;
+  const Y = (y) => H - y;
+  const pts = (poly) => poly.map(([x, y]) => `${x.toFixed(2)},${Y(y).toFixed(2)}`).join(' ');
+  const fs = Math.max(3, Math.min(p.segW * 0.62, p.dotSize * 0.75, 9));
+  const pad = 14;
+  let s = `<svg viewBox="${-pad} ${-pad} ${W + 2 * pad} ${H + 2 * pad + 10}" role="img" aria-label="Čelní pohled na displej ${p.layout} s pořadím LED">`;
+  s += `<rect x="0" y="0" width="${W}" height="${H}" rx="${Math.min(2, p.chamfer * 2)}" class="fp-case"/>`;
+  for (const po of L.posts) {
+    const [x0, y0, x1, y1] = po.r;
+    s += `<rect x="${x0}" y="${Y(y1)}" width="${x1 - x0}" height="${y1 - y0}" class="fp-post"/>`;
+    s += `<circle cx="${po.h[0]}" cy="${Y(po.h[1])}" r="${p.screwD / 2}" class="fp-hole"/>`;
+  }
+  for (const e of L.els) {
+    s += `<circle cx="${e.c[0]}" cy="${Y(e.c[1])}" r="${L.rOut}" class="fp-sock"/>`;
+  }
+  for (const e of L.els) {
+    s += `<polygon points="${pts(e.poly)}" class="fp-seg"><title>LED ${e.led}: pozice ${e.glyph + 1}, ${e.kind === 'seg' ? 'segment ' + e.name : e.name}</title></polygon>`;
+  }
+  for (const e of L.els) {
+    s += `<text x="${e.c[0]}" y="${Y(e.c[1])}" font-size="${fs}" text-anchor="middle" dominant-baseline="central" class="fp-num">${e.led}</text>`;
+  }
+  s += `<text x="${W / 2}" y="${H + 9}" font-size="5" text-anchor="middle" class="fp-cap">${fmt(W)} × ${fmt(H)} mm · pohled zepředu · čísla = pořadí LED v řetězu · čárkovaně lůžka a sloupky</text>`;
+  s += '</svg>';
+  pane.innerHTML = s;
+}
+
+// ---------- souhrn ----------
+function renderFacts() {
+  const p = L.p, n = L.els.length;
+  const amps = (n * 0.06);
+  const rows = [
+    ['Pouzdro', `<b>${fmt(L.caseW)} × ${fmt(L.caseH)} × ${fmt(p.depth)}</b> mm`],
+    ...(p.lid ? [['Krabička', `<b>${fmt(L.caseW)} × ${fmt(L.caseH)} × ${fmt(p.lidDepth)}</b> mm`]] : []),
+    ['Moduly LED', `<b>${n}</b> × WS2812B, kulatá deska ⌀ 10 mm`],
+    ['Napájení', `5 V, až <b>${fmt(amps, 2)}</b> A při plném bílém jasu`],
+    ['Šrouby', `<b>${L.posts.length}</b> × M3 × 12–16 mm`],
+    ['Číslice', `${fmt(p.digitW)} × ${fmt(p.digitH)} mm, segment ${fmt(p.segW)} mm${p.slant ? `, sklon ${fmt(p.slant)}°` : ''}`],
+  ];
+  $('#facts').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+}
+
+function renderWarnings() {
+  const box = $('#warnings');
+  box.hidden = !L.warnings.length;
+  box.innerHTML = L.warnings.map((w) => `<p>${w.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))}</p>`).join('');
+}
+
+// ---------- export ----------
+let dlCap = null;
+const inViewer = !!(window.claude && typeof window.claude.use === 'function');
+
+function slug(s) {
+  return String(s).replace(/:/g, '-').replace(/[.,]/g, 'p').replace(/°/g, 'st').replace(/^-/, 'm').replace(/\s+/g, '_').replace(/[^0-9A-Za-z_p-]/g, '') || 'displej';
+}
+const baseName = () => `segmentovka_${slug(built ? built.params.layout : params.layout)}`;
+
+async function make3mf() {
+  const { L: lay, R } = built;
+  const parts = [{ name: 'Pouzdro', mesh: R.case }];
+  if (R.diffuser) parts.push({ name: 'Difuzory', mesh: R.diffuser });
+  const extra = R.lid ? [{ name: 'Zadní krabička', mesh: lidToPrint(R.lid, lay), offset: [0, lay.caseH + 10, 0] }] : [];
+  return zip(threeMF({ title: `Segmentovka ${lay.p.layout}`, parts, extra }));
+}
+
+function readme(lay) {
+  const p = lay.p;
+  return [
+    `Segmentovka – rozložení „${p.layout}“`,
+    '',
+    `Pouzdro: ${fmt(lay.caseW)} × ${fmt(lay.caseH)} × ${fmt(p.depth)} mm, tisk čelem dolů.`,
+    p.lid ? `Zadní krabička: ${fmt(lay.caseW)} × ${fmt(lay.caseH)} × ${fmt(p.lidDepth)} mm, tisk zadní deskou dolů.` : '',
+    p.diffuser ? `Difuzory: ${lay.els.length} ks, tloušťka ${fmt(p.diffT)} mm, vůle ${fmt(p.diffClear, 2)} mm. Bílý nebo průsvitný filament.` : '',
+    '',
+    'Díly:',
+    `- ${lay.els.length} × modul WS2812B (kulatá deska ⌀ 10 mm, lůžko ⌀ ${fmt(p.modD, 2)} mm)`,
+    `- ${lay.posts.length} × šroub M3 × 12–16 mm (do otvorů ⌀ ${fmt(p.screwD, 2)} mm)`,
+    `- zdroj 5 V, až ${fmt(lay.els.length * 0.06, 2)} A při plném bílém jasu`,
+    '',
+    'Soubory:',
+    '- *_pouzdro.stl, *_difuzory.stl, *_krabicka.stl – jednotlivé díly',
+    '- *.3mf – pouzdro a difuzory jako dva díly jednoho objektu (pro tisk s AMS) + krabička',
+    '- *_led-mapa.h – pořadí LED v řetězu pro firmware',
+    '- *_parametry.json – lze znovu načíst v generátoru (Načíst parametry…)',
+    '',
+  ].filter((l) => l !== null).join('\n');
+}
+
+async function buildZip() {
+  const { L: lay, R } = built;
+  const base = baseName();
+  const files = [];
+  if (R.case) files.push({ name: `${base}_pouzdro.stl`, data: stl(R.case, 'pouzdro') });
+  if (R.diffuser) files.push({ name: `${base}_difuzory.stl`, data: stl(R.diffuser, 'difuzory') });
+  if (R.lid) files.push({ name: `${base}_krabicka.stl`, data: stl(lidToPrint(R.lid, lay), 'krabicka') });
+  files.push({ name: `${base}.3mf`, data: await make3mf() });
+  files.push({ name: `${base}_led-mapa.h`, data: ledMap(lay) + '\n' });
+  files.push({ name: `${base}_parametry.json`, data: JSON.stringify(built.params, null, 2) + '\n' });
+  files.push({ name: 'CTIMNE.txt', data: readme(lay) });
+  return zip(files);
+}
+
+function blobDownload(data, name) {
+  const url = URL.createObjectURL(new Blob([data], { type: 'application/octet-stream' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = name; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+function setExportMsg(t) { $('#export-msg').textContent = t; }
+
+function setExportEnabled(on) {
+  const R = built && built.R;
+  $('#dl-zip').disabled = !on;
+  for (const b of document.querySelectorAll('[data-dl]')) {
+    const k = b.dataset.dl;
+    b.disabled = !on || (k !== '3mf' && !(R && R[k]));
+  }
+}
+
+function exportMode() {
+  // V prohlížeči Claude lze ukládat jen přes schválenou schopnost a jen povolené přípony (ZIP ano, STL ne).
+  const capMode = inViewer && dlCap;
+  for (const b of document.querySelectorAll('[data-dl]')) b.hidden = !!capMode;
+  $('#export-note').textContent = capMode
+    ? 'Uloží ZIP se všemi díly: STL, 3MF (pouzdro s difuzory jako dva díly jednoho objektu), mapu LED a parametry.'
+    : 'ZIP obsahuje STL všech dílů, 3MF (pouzdro s difuzory jako dva díly jednoho objektu), mapu LED a parametry.';
+}
+
+async function save(name, data) {
+  if (inViewer && dlCap) {
+    try {
+      await dlCap.save({ filename: name, data: new Blob([data]) });
+      setExportMsg(`Uloženo: ${name}`);
+    } catch (e) {
+      const code = e && e.code;
+      setExportMsg(code === 'declined' ? 'Ukládání zrušeno.' : code === 'rate_limited' ? 'Ukládání už čeká na potvrzení, zkuste to za chvíli.' : `Soubor se nepodařilo uložit (${(e && e.message) || code || 'neznámá chyba'}).`);
+    }
+  } else {
+    blobDownload(data, name);
+    setExportMsg(`Stahuji ${name}`);
+  }
+}
+
+$('#dl-zip').addEventListener('click', async () => {
+  if (!built) return;
+  const b = $('#dl-zip');
+  b.disabled = true;
+  setExportMsg('Připravuji ZIP…');
+  try { await save(`${baseName()}.zip`, await buildZip()); }
+  catch (e) { setExportMsg(`Export selhal: ${(e && e.message) || e}`); }
+  b.disabled = false;
+});
+for (const b of document.querySelectorAll('[data-dl]')) {
+  b.addEventListener('click', async () => {
+    if (!built) return;
+    const k = b.dataset.dl, base = baseName(), { L: lay, R } = built;
+    if (k === '3mf') return save(`${base}.3mf`, await make3mf());
+    const names = { case: 'pouzdro', diffuser: 'difuzory', lid: 'krabicka' };
+    const mesh = k === 'lid' ? lidToPrint(R.lid, lay) : R[k];
+    save(`${base}_${names[k]}.stl`, stl(mesh, names[k]));
+  });
+}
+$('#copy-map').addEventListener('click', async () => {
+  const text = $('#ledmap').textContent;
+  try { await navigator.clipboard.writeText(text); $('#copy-map').textContent = 'Zkopírováno'; }
+  catch (_) {
+    const r = document.createRange(); r.selectNodeContents($('#ledmap'));
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    $('#copy-map').textContent = 'Označeno, zkopírujte Ctrl+C';
+  }
+  setTimeout(() => { $('#copy-map').textContent = 'Zkopírovat'; }, 2200);
+});
+
+// ---------- záložky a přepínače ----------
+function showTab(front) {
+  $('#tab-3d').setAttribute('aria-selected', String(!front));
+  $('#tab-front').setAttribute('aria-selected', String(front));
+  $('#front-pane').hidden = !front;
+  viewer.renderer.domElement.style.visibility = front ? 'hidden' : 'visible';
+  $('#tools3d').style.visibility = front ? 'hidden' : 'visible';
+}
+$('#tab-3d').addEventListener('click', () => showTab(false));
+$('#tab-front').addEventListener('click', () => showTab(true));
+for (const b of document.querySelectorAll('[data-view]')) b.addEventListener('click', () => viewer.setView(b.dataset.view));
+$('#v-diff').addEventListener('change', () => viewer.applyToggles());
+$('#v-lid').addEventListener('change', () => viewer.applyToggles());
+$('#v-cut').addEventListener('change', () => { viewer.applyToggles(); if ($('#v-cut').checked) viewer.setView('cut'); });
+
+// téma
+const mq = window.matchMedia('(prefers-color-scheme: dark)');
+mq.addEventListener('change', () => viewer.applyTheme());
+new MutationObserver(() => viewer.applyTheme()).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+// ---------- start ----------
+buildPresets();
+buildParamsUI();
+$('#p-layout').addEventListener('input', (e) => { params.layout = e.target.value; changed(); });
+syncInputs();
+viewer.init();
+engine.init();
+exportMode();
+if (inViewer) {
+  window.claude.use('downloads').then((d) => { dlCap = d; exportMode(); }).catch(() => {});
+}
+changed();
+</script>
