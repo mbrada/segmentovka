@@ -203,6 +203,18 @@ pre { margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 1
 .fp-dim-t { stroke: var(--ink); stroke-width: calc(var(--dw) * 1.6); }
 .fp-dim-x { stroke: var(--muted); stroke-width: calc(var(--dw) * 0.8); }
 .fp-depth { fill: var(--ink); font-family: var(--font-ui); }
+/* kóty, které jdou měnit kolečkem nebo kliknutím; průhledný tah zvětší plochu pro myš */
+.front-pane .ed { cursor: pointer; stroke: transparent; paint-order: stroke; }
+.front-pane .ed:hover, .front-pane .ed.on { fill: var(--led); }
+.dim-pop { position: absolute; z-index: 30; width: 250px; display: grid; gap: 8px; padding: 10px 12px 12px; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 8px 28px rgb(0 0 0 / 0.28); }
+.dim-pop[hidden] { display: none; }
+.dim-pop label { font-weight: 700; font-size: 14px; }
+.dim-pop .num { display: flex; }
+.dim-pop .num input { flex: 1; width: auto; min-width: 0; font-size: 16px; }
+.dim-pop small { color: var(--muted); font-size: 12px; line-height: 1.35; }
+.dim-pop small.err { color: var(--warn-ink); background: var(--warn-bg); border-radius: 4px; padding: 4px 6px; }
+.tool-hint { font-size: 12px; color: var(--muted); }
+.dim-btns { display: flex; justify-content: flex-end; gap: 6px; }
 .fp-usb { fill: none; stroke: var(--display-fg); stroke-width: 0.5; stroke-dasharray: 1.5 1; opacity: 0.7; }
 .fp-sock { fill: none; stroke: var(--muted); stroke-width: 0.3; stroke-dasharray: 0.8 1; opacity: 0.7; }
 .fp-seg { fill: var(--led); }
@@ -262,6 +274,7 @@ pre { margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 1
         </div>
         <div class="tools" id="tools-front" hidden>
           <label class="toggle"><input type="checkbox" id="v-dims">Kóty</label>
+          <span class="tool-hint" id="dims-hint" hidden>čísla měníte kolečkem myši nebo kliknutím</span>
         </div>
       </div>
       <div class="viewport" id="viewport">
@@ -303,6 +316,13 @@ pre { margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 1
     </section>
   </main>
 </div>
+
+<form class="dim-pop" id="dim-pop" hidden autocomplete="off" aria-labelledby="dim-name">
+  <label for="dim-val" id="dim-name">Kóta</label>
+  <span class="num"><input type="text" id="dim-val" inputmode="decimal" spellcheck="false" enterkeyhint="done"><span>mm</span></span>
+  <small id="dim-note" aria-live="polite"></small>
+  <div class="dim-btns"><button type="button" class="btn" id="dim-cancel">Zrušit</button><button type="submit" class="btn primary">Použít</button></div>
+</form>
 
 <script type="module">
 import * as THREE from 'three';
@@ -905,6 +925,41 @@ const viewer = {
 };
 
 // ---------- čelní pohled ----------
+// Kóty, které jdou měnit (kolečkem nad číslem nebo kliknutím a zadáním): parametr, který se mění,
+// a jak z rozvržení zjistit délku kóty. own = kóta je přímo ten parametr.
+const dimCell = (L) => L.cells.find((q) => q.t === 'digit') || L.cells.find((q) => q.t === 'minus' || q.t === 'deg');
+const DIM_BIND = {
+  margin: { key: 'margin', own: true, name: 'Okraj kolem číslic', get: (L) => L.p.margin },
+  marginB: { key: 'margin', name: 'Okraj pod číslicí', get: (L) => L.offY },
+  marginT: { key: 'margin', name: 'Okraj nad číslicí', get: (L) => L.caseH - L.offY - L.p.digitH },
+  digitW: { key: 'digitW', own: true, name: 'Šířka číslice', get: (L) => dimCell(L).w },
+  digitGap: {
+    key: 'digitGap', own: true, name: 'Mezera mezi číslicemi',
+    get: (L) => { const c = dimCell(L), n = L.cells[L.cells.indexOf(c) + 1]; return n ? n.x0 - (c.x0 + c.w) : 0; },
+  },
+  digitH: { key: 'digitH', own: true, name: 'Výška číslice', get: (L) => L.p.digitH },
+  segW: { key: 'segW', own: true, name: 'Tloušťka segmentu', get: (L) => L.p.segW },
+  caseW: { key: 'digitW', name: 'Celková šířka', get: (L) => L.caseW },
+  caseH: { key: 'digitH', name: 'Celková výška', get: (L) => L.caseH },
+  depth: { key: 'depth', own: true, name: 'Hloubka pouzdra', get: (L) => L.p.depth },
+  lidDepth: { key: 'lidDepth', own: true, name: 'Hloubka krabičky', get: (L) => L.p.lidDepth },
+  peg: { key: 'postSink', name: 'Čepy krabičky', get: (L) => postPeg(L.p).peg },
+};
+const r2 = (v) => Math.round(v * 100) / 100;
+const r3 = (v) => Math.round(v * 1000) / 1000;
+// [popis, jednotka, min, max, krok] parametru z GROUPS
+function paramDef(key) {
+  for (const g of GROUPS) for (const it of g.items) if (it[0] === key) return { label: it[1], min: it[3], max: it[4], step: it[5] };
+  return { label: key, min: 0, max: Infinity, step: 0.5 };
+}
+// atributy měnitelné kóty (text nebo tspan); sw = tah, který zvětší plochu pro myš
+function dimAttr(L, id, sw) {
+  const b = DIM_BIND[id], d = paramDef(b.key), v = r2(b.get(L));
+  const how = b.own ? `kolečkem ±${fmt(d.step)} mm` : `kolečkem mění „${d.label}“ po ${fmt(d.step)} mm`;
+  return { attr: ` data-dim="${id}" tabindex="0" role="spinbutton" aria-label="${b.name}" aria-valuenow="${v}" aria-valuetext="${fmt(v, 2)} mm" stroke-width="${sw.toFixed(2)}"`,
+    tip: `<title>${b.name} – ${how} (se Shiftem ×10), kliknutím zadáte přesnou hodnotu</title>` };
+}
+
 // Kóty: řetězce vně obrysu (nahoře okraj, šířka číslice a mezera, nad nimi rozteč otvorů
 // na zavěšení; vlevo okraje a výška číslice; vpravo otvory na zavěšení od horní hrany
 // a celková výška; dole tloušťka segmentu a celková šířka). Vrací SVG a místo, které kóty potřebují kolem obrysu [vlevo, nahoře, vpravo, dole].
@@ -916,50 +971,57 @@ function frontDims(L) {
   const num = (v) => fmt(v, 2);
   let s = '';
   const tick = (x, y) => `<line x1="${x - t}" y1="${y + t}" x2="${x + t}" y2="${y - t}" class="fp-dim-t"/>`;
+  const text = (pos, txt, id) => {
+    if (!id) return `<text ${pos} class="fp-dim">${txt}</text>`;
+    const a = dimAttr(L, id, f * 0.9);
+    return `<text ${pos} class="fp-dim ed"${a.attr}>${txt}${a.tip}</text>`;
+  };
   const label = (txt, len, along) => {
     // krátká kóta: text za koncem čáry
     const tw = String(txt).length * f * 0.58;
     return len >= tw + 1 ? along(len / 2) : along(len + tw / 2 + t + 0.8);
   };
   // vodorovná kóta x0–x1 na výšce y; vynášecí čáry od bodů (x0, ya) a (x1, yb)
-  const hdim = (x0, x1, y, ya, yb, txt = num(x1 - x0)) => {
+  const hdim = (x0, x1, y, ya, yb, id) => {
     if (x1 - x0 < 0.05) return;
+    const txt = num(x1 - x0);
     const d = y > ya ? 1 : -1;
     for (const [x, yf] of [[x0, ya], [x1, yb]]) s += `<line x1="${x}" y1="${Y(yf + d)}" x2="${x}" y2="${Y(y + d * ov)}" class="fp-dim-x"/>`;
     s += `<line x1="${x0}" y1="${Y(y)}" x2="${x1}" y2="${Y(y)}" class="fp-dim-l"/>${tick(x0, Y(y))}${tick(x1, Y(y))}`;
-    s += label(txt, x1 - x0, (a) => `<text x="${x0 + a}" y="${Y(y) - f * 0.35}" font-size="${f}" text-anchor="middle" class="fp-dim">${txt}</text>`);
+    s += label(txt, x1 - x0, (a) => text(`x="${x0 + a}" y="${Y(y) - f * 0.35}" font-size="${f}" text-anchor="middle"`, txt, id));
   };
   // svislá kóta y0–y1 na x; vynášecí čáry od bodů (xa, y0) a (xb, y1); text čte zdola
-  const vdim = (y0, y1, x, xa, xb, txt = num(y1 - y0)) => {
+  const vdim = (y0, y1, x, xa, xb, id) => {
     if (y1 - y0 < 0.05) return;
+    const txt = num(y1 - y0);
     const d = x > xa ? 1 : -1;
     for (const [xf, yy] of [[xa, y0], [xb, y1]]) s += `<line x1="${xf + d}" y1="${Y(yy)}" x2="${x + d * ov}" y2="${Y(yy)}" class="fp-dim-x"/>`;
     s += `<line x1="${x}" y1="${Y(y0)}" x2="${x}" y2="${Y(y1)}" class="fp-dim-l"/>${tick(x, Y(y0))}${tick(x, Y(y1))}`;
-    s += label(txt, y1 - y0, (a) => `<text transform="translate(${x - f * 0.35} ${Y(y0 + a)}) rotate(-90)" font-size="${f}" text-anchor="middle" class="fp-dim">${txt}</text>`);
+    s += label(txt, y1 - y0, (a) => text(`transform="translate(${x - f * 0.35} ${Y(y0 + a)}) rotate(-90)" font-size="${f}" text-anchor="middle"`, txt, id));
   };
 
   // první číslice (nebo mínus/stupeň) – rozměry jejího obrysu, u sklonu na šikmé hraně
-  const c = L.cells.find((q) => q.t === 'digit') || L.cells.find((q) => q.t === 'minus' || q.t === 'deg');
+  const c = dimCell(L);
   const dH = p.digitH, k = Math.tan((p.slant * Math.PI) / 180);
   const yB = L.offY, yT = L.offY + dH;
   const xAt = (x, y) => x + L.offX + (y - yB - dH / 2) * k;
   const kh = p.lid ? L.keyholes : [];
   const top = kh.length ? 2 : 1;
 
-  hdim(0, p.margin, H + lv, H, H);
-  vdim(0, yB, -lv, 0, c ? xAt(c.x0, yB) : 0);
+  hdim(0, p.margin, H + lv, H, H, 'margin');
+  vdim(0, yB, -lv, 0, c ? xAt(c.x0, yB) : 0, 'marginB');
   if (c) {
     const xTL = xAt(c.x0, yT), xBL = xAt(c.x0, yB);
-    hdim(xTL, xTL + c.w, H + lv, yT, yT);
+    hdim(xTL, xTL + c.w, H + lv, yT, yT, 'digitW');
     const next = L.cells[L.cells.indexOf(c) + 1];
     const gap = next ? next.x0 - (c.x0 + c.w) : 0;
-    if (gap > 0.05) hdim(xTL + c.w, xTL + c.w + gap, H + lv, yT, yT);
-    vdim(yB, yT, -lv, xBL, xTL);
-    vdim(yT, H, -lv, xTL, 0);
-    hdim(xBL, xBL + p.segW, -lv, yB, yB); // tloušťka segmentu (svislý segment vlevo dole)
+    if (gap > 0.05) hdim(xTL + c.w, xTL + c.w + gap, H + lv, yT, yT, 'digitGap');
+    vdim(yB, yT, -lv, xBL, xTL, 'digitH');
+    vdim(yT, H, -lv, xTL, 0, 'marginT');
+    hdim(xBL, xBL + p.segW, -lv, yB, yB, 'segW'); // tloušťka segmentu (svislý segment vlevo dole)
   } else vdim(yB, H, -lv, 0, 0);
-  vdim(0, H, W + top * lv, W, W);
-  hdim(0, W, -2 * lv, 0, 0);
+  vdim(0, H, W + top * lv, W, W, 'caseH');
+  hdim(0, W, -2 * lv, 0, 0, c ? 'caseW' : null); // bez číslic šířka na digitW nezávisí
 
   // otvory na zavěšení: obrys čárkovaně, rozteč nahoře, vzdálenost od horní hrany vpravo
   if (kh.length) {
@@ -1050,11 +1112,16 @@ function renderFront() {
     s += D.svg;
     // hloubka zepředu vidět není – aspoň jako text
     const pg = postPeg(p);
-    s += `<text x="${W / 2}" y="${capY + cf * 1.4}" font-size="${cf}" text-anchor="middle" class="fp-depth">hloubka: pouzdro ${fmt(p.depth)} mm${p.lid ? ` + krabička ${fmt(p.lidDepth)} mm = ${fmt(p.depth + p.lidDepth)} mm${pg.peg ? ` · čepy krabičky ${fmt(pg.peg, 2)} mm do sloupků` : ''}` : ''} · kóty v mm</text>`;
+    const ed = (id, txt) => { const a = dimAttr(L, id, cf * 0.9); return `<tspan class="ed"${a.attr}>${txt}${a.tip}</tspan>`; };
+    s += `<text x="${W / 2}" y="${capY + cf * 1.4}" font-size="${cf}" text-anchor="middle" class="fp-depth">hloubka: pouzdro ${ed('depth', `${fmt(p.depth)} mm`)}${p.lid ? ` + krabička ${ed('lidDepth', `${fmt(p.lidDepth)} mm`)} = ${fmt(p.depth + p.lidDepth)} mm${pg.peg ? ` · čepy krabičky ${ed('peg', `${fmt(pg.peg, 2)} mm`)} do sloupků` : ''}` : ''} · kóty v mm</text>`;
   }
   s += `<text x="${W / 2}" y="${capY}" font-size="${cf}" text-anchor="middle" class="fp-cap">${fmt(W)} × ${fmt(H)} mm · pohled zepředu · čísla = pořadí LED v řetězu · čárkovaně lůžka, sloupky${L.usb ? ' a otvor pro kabel' : ''}${sp && sp.n > 1 ? ` · ${sp.n} dílů: ◇ zámek, ○ šroub, ▭ výřez pro vodiče` : ''}</text>`;
   s += '</svg>';
+  const foc = pane.contains(document.activeElement) && document.activeElement.dataset ? document.activeElement.dataset.dim : null;
   pane.innerHTML = s;
+  if (!D) closeDimPop(false);
+  if (foc) { const el = pane.querySelector(`[data-dim="${foc}"]`); if (el) el.focus({ preventScroll: true }); }
+  if (dimWheel.id && performance.now() - dimWheel.t < WHEEL_HOLD) { const el = pane.querySelector(`[data-dim="${dimWheel.id}"]`); if (el) el.classList.add('on'); }
 }
 
 // ---------- souhrn ----------
@@ -1245,16 +1312,141 @@ function showTab(front) {
   viewer.renderer.domElement.style.visibility = front ? 'hidden' : 'visible';
   $('#tools3d').hidden = front;
   $('#tools-front').hidden = !front;
+  if (!front) closeDimPop(false);
 }
 $('#tab-3d').addEventListener('click', () => showTab(false));
 $('#tab-front').addEventListener('click', () => showTab(true));
 // kóty v čelním pohledu – volba se pamatuje v prohlížeči
 const DIMS_KEY = 'segmentovka.dims';
 try { $('#v-dims').checked = localStorage.getItem(DIMS_KEY) === '1'; } catch (_) { /* úložiště nedostupné */ }
+$('#dims-hint').hidden = !$('#v-dims').checked;
 $('#v-dims').addEventListener('change', () => {
   try { localStorage.setItem(DIMS_KEY, $('#v-dims').checked ? '1' : '0'); } catch (_) { /* nevadí */ }
+  $('#dims-hint').hidden = !$('#v-dims').checked;
   renderFront();
 });
+
+// ---------- kóty: změna kolečkem, šipkami a zadáním ----------
+function setParam(key, v) {
+  if (v === params[key]) return;
+  params[key] = v;
+  syncInputs();
+  changed();
+}
+// krok parametru kóty o n kroků (z popisu parametru v GROUPS), v jeho rozsahu
+function stepDim(id, n) {
+  const b = DIM_BIND[id], d = paramDef(b.key);
+  setParam(b.key, r3(Math.min(d.max, Math.max(d.min, params[b.key] + n * d.step))));
+}
+// hodnota parametru, při které má kóta délku target; kóty jsou v parametru lineární,
+// sečnám tedy stačí jeden dva kroky (null = kótu tím parametrem na target nastavit nejde)
+function solveDim(b, target) {
+  const f = (v) => b.get(computeLayout({ ...params, [b.key]: v })) - target;
+  try {
+    let v0 = params[b.key], f0 = f(v0);
+    if (Math.abs(f0) < 1e-4) return v0;
+    let v1 = v0 + paramDef(b.key).step, f1 = f(v1);
+    for (let i = 0; i < 20 && Math.abs(f1) >= 1e-4; i++) {
+      if (Math.abs(f1 - f0) < 1e-9) return null;
+      const v2 = v1 - (f1 * (v1 - v0)) / (f1 - f0);
+      v0 = v1; f0 = f1; v1 = v2; f1 = f(v1);
+    }
+    return Number.isFinite(f1) && Math.abs(f1) < 0.005 ? r3(v1) : null;
+  } catch (_) { return null; }
+}
+
+// Kolečko: jeden krok na zub kolečka, touchpad se sčítá. Po dobu točení zůstává vybraná
+// tatáž kóta, i když se výkres pod kurzorem posune (mění se měřítko).
+const WHEEL_HOLD = 650;
+const dimWheel = { id: null, t: 0, acc: 0, timer: 0 };
+$('#front-pane').addEventListener('wheel', (e) => {
+  const el = e.target.closest && e.target.closest('[data-dim]');
+  const now = performance.now();
+  const id = dimWheel.id && now - dimWheel.t < WHEEL_HOLD ? dimWheel.id : el && el.dataset.dim;
+  if (!id || !DIM_BIND[id]) return;
+  e.preventDefault();
+  if (id !== dimWheel.id) dimWheel.acc = 0;
+  dimWheel.id = id; dimWheel.t = now;
+  clearTimeout(dimWheel.timer);
+  dimWheel.timer = setTimeout(() => { const on = $('#front-pane .ed.on'); if (on) on.classList.remove('on'); }, WHEEL_HOLD);
+  // Shift + kolečko posílá prohlížeč jako vodorovný posun
+  const dy = (e.deltaY || e.deltaX) * (e.deltaMode === 1 ? 40 : e.deltaMode === 2 ? 800 : 1);
+  // zub kolečka ≈ 100 px; zaneprázdněný prohlížeč slije víc zubů do jedné události
+  let n;
+  if (Math.abs(dy) >= 50) { n = -Math.sign(dy) * Math.max(1, Math.round(Math.abs(dy) / 100)); dimWheel.acc = 0; }
+  else {
+    dimWheel.acc += dy;
+    if (Math.abs(dimWheel.acc) < 50) return;
+    n = -Math.sign(dimWheel.acc); dimWheel.acc = 0;
+  }
+  stepDim(id, n * (e.shiftKey ? 10 : 1));
+}, { passive: false });
+$('#front-pane').addEventListener('click', (e) => {
+  const el = e.target.closest && e.target.closest('[data-dim]');
+  if (el) openDimPop(el);
+});
+$('#front-pane').addEventListener('keydown', (e) => {
+  const el = e.target.closest && e.target.closest('[data-dim]');
+  if (!el) return;
+  const n = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1, PageUp: 10, PageDown: -10 }[e.key];
+  if (n) { e.preventDefault(); stepDim(el.dataset.dim, n * (e.shiftKey ? 10 : 1)); }
+  else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDimPop(el); }
+});
+
+// Dialog pro přesnou hodnotu u kóty
+let popId = null;
+function dimNote(msg, err) {
+  const n = $('#dim-note');
+  n.textContent = msg;
+  n.classList.toggle('err', !!err);
+}
+function openDimPop(el) {
+  const id = el.dataset.dim, b = DIM_BIND[id];
+  if (!b || !L) return;
+  const d = paramDef(b.key), pop = $('#dim-pop'), inp = $('#dim-val');
+  popId = id;
+  $('#dim-name').textContent = b.name;
+  inp.value = String(r2(b.get(L))).replace('.', ',');
+  dimNote(b.own ? `Rozsah ${fmt(d.min)}–${fmt(d.max)} mm.` : `Změní se parametr „${d.label}“ (teď ${fmt(params[b.key], 2)} mm).`);
+  pop.hidden = false;
+  const r = el.getBoundingClientRect(), pw = pop.offsetWidth, ph = pop.offsetHeight;
+  const x = Math.max(8, Math.min(innerWidth - pw - 8, r.left + r.width / 2 - pw / 2));
+  const y = r.bottom + 8 + ph > innerHeight - 8 && r.top - ph - 8 > 8 ? r.top - ph - 8 : r.bottom + 8;
+  pop.style.left = `${x + scrollX}px`;
+  pop.style.top = `${y + scrollY}px`;
+  inp.focus({ preventScroll: true });
+  inp.select();
+}
+function closeDimPop(refocus = true) {
+  const pop = $('#dim-pop');
+  if (pop.hidden) return;
+  pop.hidden = true;
+  if (refocus) { const el = $(`#front-pane [data-dim="${popId}"]`); if (el) el.focus({ preventScroll: true }); }
+  popId = null;
+}
+$('#dim-pop').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const b = DIM_BIND[popId];
+  if (!b) return closeDimPop(false);
+  const d = paramDef(b.key);
+  const t = Number($('#dim-val').value.replace(/\s/g, '').replace(',', '.'));
+  const fail = (msg) => { dimNote(msg, true); $('#dim-val').focus(); };
+  if ($('#dim-val').value.trim() === '' || !Number.isFinite(t) || t < 0) return fail('Zadejte rozměr v milimetrech, třeba 42,5.');
+  const v = solveDim(b, t);
+  if (v == null) return fail('Na tuto hodnotu kótu nastavit nejde.');
+  if (v < d.min - 1e-9 || v > d.max + 1e-9) {
+    return fail(`Parametr „${d.label}“ by musel být ${fmt(v, 2)} mm, povolený rozsah je ${fmt(d.min)}–${fmt(d.max)} mm.`);
+  }
+  closeDimPop();
+  setParam(b.key, v);
+});
+$('#dim-cancel').addEventListener('click', () => closeDimPop());
+$('#dim-pop').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); closeDimPop(); } });
+document.addEventListener('pointerdown', (e) => {
+  if ($('#dim-pop').hidden || $('#dim-pop').contains(e.target) || (e.target.closest && e.target.closest('#front-pane [data-dim]'))) return;
+  closeDimPop(false);
+});
+window.addEventListener('resize', () => closeDimPop(false));
 for (const b of document.querySelectorAll('[data-view]')) b.addEventListener('click', () => viewer.setView(b.dataset.view));
 $('#v-diff').addEventListener('change', () => viewer.applyToggles());
 $('#v-lid').addEventListener('change', () => viewer.applyToggles());

@@ -24,7 +24,11 @@ Běží na https://segmentovka.miloslavbrada.cz
   čepem s vůlí `postFit` ke stěnám – tužší spoj a krabička sedí přesně; délka šroubů se podle
   toho přepočítá (`lidScrewLen`)
 - čelní pohled umí kóty: okraje, šířka a výška číslice, mezera, tloušťka segmentu, celkové
-  rozměry, rozteč otvorů na zavěšení a jejich vzdálenost od horní hrany, hloubka v popisku
+  rozměry, rozteč otvorů na zavěšení a jejich vzdálenost od horní hrany, hloubka v popisku;
+  čísla kót jdou měnit kolečkem myši (o krok parametru, se Shiftem ×10), šipkami, nebo kliknutím
+  a zadáním hodnoty – odvozené kóty (celková šířka a výška, okraj nahoře a dole, čepy) se
+  dopočítají přes parametr, na kterém závisí (`DIM_BIND` v `page.html`); rozteč otvorů na
+  zavěšení je dána šířkou pouzdra a měnit nejde
 - dělení na díly (`split.js`): když se pouzdro nevejde na tiskovou plochu, rozdělí se rovnými
   řezy, které nevedou přes lůžka LED a co nejméně přes světlovody; na spoji mají díly stěny
   s rybinovými zámky (zasunou se zezadu) a/nebo šrouby M3 s maticí, ve stěnách jsou výřezy pro
