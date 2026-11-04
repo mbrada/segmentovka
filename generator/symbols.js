@@ -1,7 +1,8 @@
 // Drobné šablonové písmo pro symboly (jednotky apod.) svícené jednou LED.
 // Znaky jsou kreslené tahy (středové čáry); tloušťku dává parametr symStroke.
-// Uzavřená očka (°, %, A) mají záměrné přerušení, aby maska v čele neměla
+// Uzavřená očka (°, %, A, O, P…) mají záměrné přerušení, aby maska v čele neměla
 // volně ležící ostrůvky – pouzdro se tak dá tisknout z jednoho materiálu.
+// Bez šablony (stencil: false) jsou tahy souvislé; ostrůvky pak drží difuzor tištěný na místě.
 //
 // Jednotky písma: výška verzálek 10, výška minusek 7, účaří 0, dotahy dolů do −3.
 //
@@ -91,9 +92,9 @@ const GLYPHS = {
 export const SYMBOL_CHARS = Object.keys(GLYPHS).join('');
 
 // Rozvrhne text symbolu. Vrací lomené čáry v mm (x od 0, účaří y = 0), rozměry a nepodporované znaky.
-export function layoutSymbol(text, { height, stroke }) {
+export function layoutSymbol(text, { height, stroke, stencil = true }) {
   const s = height / 10; // mm na jednotku písma
-  const gU = (stroke + 1.0) / s; // mezera šablony: 1 mm volného místa mezi tahy
+  const gU = stencil ? (stroke + 1.0) / s : 0; // mezera šablony: 1 mm volného místa mezi tahy
   const spacing = Math.max(stroke + 1.5, 0.2 * height);
   const lines = [];
   const bad = [];

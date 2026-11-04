@@ -16,7 +16,7 @@ export const DEFAULTS = {
   digitW: 40, digitH: 90, segW: 10, gap: 3.54, slant: 0, segStyle: 'pointed',
   digitGap: 5, colonW: 20, dpW: 12, dotSize: 10, dotShape: 'diamond',
   // symboly [cm], [°C]…: maska v čele, jedna LED
-  symH: 16, symStroke: 2, symPos: 'auto', symPad: 2,
+  symH: 16, symStroke: 2, symPos: 'auto', symPad: 2, symStencil: 'auto',
   // pouzdro
   margin: 8, wall: 3, front: 3, depth: 45.5, chamfer: 0.5,
   recessDepth: 1, recessInset: 1, tubeWall: 2, tubeEndD: 10,
@@ -266,6 +266,10 @@ export function computeLayout(params) {
   if (bad.length) warnings.push(`Neznámé znaky v rozložení: ${bad.map((c) => `„${c}“`).join(', ')} (ignoruji je).`);
 
   const rOut = p.modD / 2 + p.ringWall;
+  // šablonové přerušení písma symbolů: automaticky jen tehdy, když vnitřky písmen nedrží
+  // difuzor tištěný na místě (vůle 0 – za maskou je destička z difuzorového materiálu)
+  const inPlace = p.diffuser && p.recessDepth > 0 && p.diffClear <= 0;
+  const stencil = p.symStencil === 'on' || (p.symStencil !== 'off' && !inPlace);
   const cells = [];
   let x = 0;
   glyphs.forEach((g, i) => {
@@ -274,7 +278,7 @@ export function computeLayout(params) {
     let cw = g.t === 'one' ? w : g.t === 'colon' ? p.colonW : g.t === 'dp' ? p.dpW : p.digitW;
     let syms = null;
     if (g.t === 'sym') {
-      const lay = (hgt) => g.items.map((t) => layoutSymbol(t, { height: hgt, stroke: p.symStroke }));
+      const lay = (hgt) => g.items.map((t) => layoutSymbol(t, { height: hgt, stroke: p.symStroke, stencil }));
       syms = lay(p.symH);
       if (g.items.length > 1) {
         // sloupec: každý symbol má pás výšky H/n; mezi okny musí zůstat stěna světlovodu
@@ -428,6 +432,8 @@ export function computeLayout(params) {
   const z = zStack(p);
   if (z.tubeEnd < p.front + 3) warnings.push('Pouzdro je na tyto rozměry lůžka příliš mělké – zvětšete hloubku.');
   if (!els.length) warnings.push('Rozložení neobsahuje žádný segment.');
+  if (!stencil && !inPlace && els.some((e) => e.kind === 'sym'))
+    warnings.push('Písmo symbolů je bez šablonových přerušení, ale difuzory se netisknou na místě (vůle 0) – vnitřky písmen (O, °, %, P…) z masky vypadnou.');
 
   // dělení na díly (když se pouzdro nevejde na tiskovou plochu)
   const outer = els.map((e) => offsetConvex(e.poly, (e.kind === 'sym' ? 0 : -p.recessInset) + p.tubeWall + 0.5));
@@ -444,7 +450,7 @@ export function computeLayout(params) {
   }
   const usb = cablePort(p, caseW, caseH, posts, split, keyholes, warnings);
 
-  return { p, cells, els, posts, caseW, caseH, offX, offY, warnings, z, rOut, minD, split, keyholes, usb };
+  return { p, cells, els, posts, stencil, caseW, caseH, offX, offY, warnings, z, rOut, minD, split, keyholes, usb };
 }
 
 // Klíčová dírka v čelních souřadnicích: velký otvor (střed [kx, ky]) a nad ním drážka

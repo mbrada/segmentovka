@@ -165,5 +165,29 @@ for (const [name, pr] of [
   ['88888888 u spoje', { layout: '88888888', keyholeGap: 100 }],
   ['88:88 obří řez', { layout: '88:88', ...big, keyholeTop: 175 }],
 ]) console.log(name.padEnd(20), checkKeyholes(pr));
+// souvislé písmo symbolů při tisku difuzorů na místě (vůle 0): pouzdro smí mít ostrůvky
+// (vnitřky písmen), ale pouzdro + difuzory musí tvořit jeden celek – ostrůvky drží destička
+function checkInPlace(params) {
+  const L = computeLayout({ bedW: 2000, bedH: 2000, diffClear: 0, ...params });
+  const R = buildModels(M, L);
+  const own = topo(R.case);
+  const u = unionOf([R.case, R.diffuser]);
+  const parts = u.decompose();
+  const islands = parts.filter((q) => q.volume() > 0.01).length - 1;
+  for (const q of parts) q.delete();
+  u.delete();
+  const ok = R.case.status === 'NoError' && !L.stencil && islands === 0;
+  if (!ok) bad++;
+  return `ostrůvků v pouzdře ${own.islands}, s difuzory ${islands}${ok ? ' ok' : ' !!'}`;
+}
+for (const layout of ['888.8[°C|%|hPa|CO₂]', '8[%RH]', '8[mbar|ppm]', '8[A]']) console.log(`na místě ${layout}`.padEnd(32), checkInPlace({ layout }));
+{
+  // automaticky: šablona při samostatných difuzorech, souvisle při tisku na místě; „vždy“ a „nikdy“ platí
+  const st = (pr) => computeLayout({ layout: '8[°C]', ...pr }).stencil;
+  const ok = st({}) && !st({ diffClear: 0 }) && st({ diffClear: 0, symStencil: 'on' }) && !st({ symStencil: 'off' }) && st({ diffClear: 0, diffuser: false });
+  const warn = computeLayout({ layout: '8[°C]', symStencil: 'off' }).warnings.some((w) => /vypadnou/.test(w));
+  if (!ok || !warn) bad++;
+  console.log('volba šablonového písma', ok && warn ? 'ok' : '!!');
+}
 console.log(bad ? `CHYBA: ${bad} kombinací` : 'OK');
 process.exitCode = bad ? 1 : 0;

@@ -14,6 +14,9 @@ Běží na https://segmentovka.miloslavbrada.cz
 - sloupec symbolů pod sebou, každý se svou LED: `888.8[°C|%|hPa|ppm]` – meteostanice
   (teplota, vlhkost, tlak, CO₂); tlačítka „Meteostanice“ zapínají jednotlivé veličiny
   nebo všechny, písmo se do výšky číslice případně zmenší; mapa LED má `SYM_TEPLOTA` …
+- šablonové písmo: očka písmen (O, °, %, P…) mají přerušení, aby z masky nic nevypadlo;
+  při tisku difuzorů na místě (vůle 0) je písmo automaticky souvislé – vnitřky písmen
+  drží destička difuzoru (volba „Šablonové písmo“: automaticky / vždy / nikdy)
 - výstupy: pouzdro (tisk čelem dolů), difuzory do 1mm vybrání, zadní krabička se sloupky,
   otvorem pro kabel a otvory na zavěšení (klíčová dírka `KEYHOLE`; rozteč `keyholeGap`,
   0 = automaticky ve čtvrtinách šířky nebo uprostřed horních dílů; od horní hrany `keyholeTop`;
