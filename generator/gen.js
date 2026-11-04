@@ -31,7 +31,10 @@ export const DEFAULTS = {
   // zadní víko (krabička); sloupky pouzdra jsou o postSink nižší a sloupky krabičky do nich
   // zasahují čepem s vůlí postFit; otvor pro kabel viz USB_PORTS
   lid: true, lidDepth: 30, lidWall: 2, lidPlate: 3, lidScrewD: 3.4, lidHeadD: 6.5,
-  lidClamp: 3, postSink: 3, postFit: 0.2, usb: 'right', usbW: 12, usbH: 7, keyholes: true,
+  lidClamp: 3, postSink: 3, postFit: 0.2, usb: 'right', usbW: 12, usbH: 7,
+  // otvory na zavěšení: keyholeTop = od horní hrany ke středu velkého otvoru, keyholeGap = rozteč
+  // dvou otvorů souměrně kolem středu (0 = automaticky: čtvrtiny šířky, u dílů střed každého horního dílu)
+  keyholes: true, keyholeGap: 0, keyholeTop: 26,
   // dělení na díly podle tiskové plochy
   splitMode: 'auto', bedW: 256, bedH: 256, joinType: 'both', jointWall: 2.5, joinClear: 0.15,
   notchW: 14, notchH: 12,
@@ -429,17 +432,65 @@ export function computeLayout(params) {
   // dělení na díly (když se pouzdro nevejde na tiskovou plochu)
   const outer = els.map((e) => offsetConvex(e.poly, (e.kind === 'sym' ? 0 : -p.recessInset) + p.tubeWall + 0.5));
   const split = computeSplit(p, { W: caseW, H: caseH, els, outer, posts, rOut, keyholes: [] }, warnings);
-  // otvory na zavěšení: po jednom uprostřed každého horního dílu, jinak ve čtvrtinách šířky
+  // otvory na zavěšení: zadaná rozteč souměrně kolem středu, automaticky po jednom uprostřed
+  // každého horního dílu, jinak ve čtvrtinách šířky; ze zóny spojů dílů se odsunou
+  const kh = p.keyholes && caseW > 60 ? keyholePlan(p, caseW, caseH, warnings) : null;
   let keyholes = [];
-  if (p.keyholes && caseW > 60) {
-    const xs = split.n > 1
+  if (kh) {
+    const xs = kh.xs || (split.n > 1
       ? split.pieces.filter((q) => q.j === split.ny - 1 && q.r[2] - q.r[0] >= 60).map((q) => (q.r[0] + q.r[2]) / 2)
-      : [caseW * 0.25, caseW * 0.75];
-    keyholes = xs.map((kx) => [kx, caseH - 26]);
+      : [caseW * 0.25, caseW * 0.75]);
+    keyholes = xs.map((kx) => keyholeClear(p, [kx, kh.y], caseW, caseH, split, posts, warnings));
   }
   const usb = cablePort(p, caseW, caseH, posts, split, keyholes, warnings);
 
   return { p, cells, els, posts, caseW, caseH, offX, offY, warnings, z, rOut, minD, split, keyholes, usb };
+}
+
+// Klíčová dírka v čelních souřadnicích: velký otvor (střed [kx, ky]) a nad ním drážka
+// k malému otvoru, na kterém pouzdro visí (kreslí ji i čelní pohled).
+export const KEYHOLE = { r: 4.2, slot: 10, rs: 2.2 };
+const khBox = ([kx, ky]) => [kx - KEYHOLE.r, ky - KEYHOLE.r, kx + KEYHOLE.r, ky + KEYHOLE.slot + KEYHOLE.rs];
+const mm = (v) => String(+v.toFixed(1)).replace('.', ',');
+
+// Svislá poloha otvorů a u zadané rozteči i vodorovné; mimo stěny krabičky.
+function keyholePlan(p, W, H, warnings) {
+  const lw = p.lidWall, { r, slot, rs } = KEYHOLE;
+  const tMin = lw + 0.5 + slot + rs, tMax = H - lw - 0.5 - r;
+  const top = Math.min(tMax, Math.max(tMin, p.keyholeTop));
+  if (Math.abs(top - p.keyholeTop) > 1e-6) warnings.push(`Otvory na zavěšení: vzdálenost od horní hrany ${mm(p.keyholeTop)} mm se nevejde mezi stěny krabičky, použito ${mm(top)} mm.`);
+  if (!(p.keyholeGap > 0)) return { y: H - top, xs: null };
+  const gMin = 2 * r + 3, gMax = W - 2 * (lw + 0.5 + r);
+  const gap = Math.min(gMax, Math.max(gMin, p.keyholeGap));
+  if (Math.abs(gap - p.keyholeGap) > 1e-6) warnings.push(`Rozteč otvorů na zavěšení ${mm(p.keyholeGap)} mm ${p.keyholeGap > gap ? 'je na šířku pouzdra moc velká' : 'je moc malá'}, použito ${mm(gap)} mm.`);
+  return { y: H - top, xs: [W / 2 - gap / 2, W / 2 + gap / 2] };
+}
+
+// Otvor nesmí zasáhnout spojovou stěnu dílů ani zámky, šrouby a průchody pro vodiče
+// (sahají nejvýš jz od řezu) – posune se vedle spoje.
+// Do sloupku krabičky zasahovat smí jen s varováním (posouvá se jen zadáním parametrů).
+function keyholeClear(p, k, W, H, split, posts, warnings) {
+  const { r, slot, rs } = KEYHOLE;
+  const jz = Math.max(p.jointWall + 1, JOINT.dove.td + JOINT.dove.boss + 1, p.jointWall + JOINT.padT + 3.5) + 1;
+  let [kx, ky] = k;
+  for (const J of split.joints) {
+    const b = khBox([kx, ky]);
+    if (J.dir === 'v') {
+      if (b[3] < J.from || b[1] > J.to || b[2] <= J.at - jz || b[0] >= J.at + jz) continue;
+      kx = kx < J.at ? J.at - jz - r : J.at + jz + r;
+    } else {
+      if (b[2] < J.from || b[0] > J.to || b[3] <= J.at - jz || b[1] >= J.at + jz) continue;
+      ky = J.at + jz + r + slot + rs <= H - p.lidWall - 0.5 ? J.at + jz + r : J.at - jz - slot - rs;
+    }
+  }
+  const d = Math.hypot(kx - k[0], ky - k[1]);
+  const msg = `Otvor na zavěšení by zasáhl do spoje dílů, je posunutý o ${mm(d)} mm.`;
+  if (d > 1e-6 && !warnings.includes(msg)) warnings.push(msg);
+  const postR = p.lidHeadD / 2 + 1.6, b = khBox([kx, ky]);
+  const near = (q) => Math.hypot(Math.max(0, b[0] - q[0], q[0] - b[2]), Math.max(0, b[1] - q[1], q[1] - b[3])) < postR + 0.5;
+  if (posts.some((po) => near(po.h)) && !warnings.some((w) => w.startsWith('Otvor na zavěšení zasahuje')))
+    warnings.push('Otvor na zavěšení zasahuje do sloupku krabičky – změňte rozteč otvorů nebo vzdálenost od horní hrany.');
+  return [kx, ky];
 }
 
 // Otvor pro kabel: obdélník v čelních souřadnicích (u boku pás přes celou stěnu krabičky).
@@ -651,11 +702,12 @@ export function buildModels(M, L, opts = {}) {
         lcuts.push(L.usb.side ? boxF(L.usb.bb, zc - p.usbH / 2, zc + p.usbH / 2) : boxF(L.usb.bb, z1 - p.lidPlate - 1, z1 + 1));
       }
       // otvory na zavěšení (klíčová dírka)
+      const { r: khR, slot: khS, rs: khRs } = KEYHOLE;
       for (const kh of L.keyholes || []) {
         const c = mx(kh);
-        lcuts.push(cyl(c, 4.2, 4.2, z1 - p.lidPlate - 1, z1 + 1, 32));
-        lcuts.push(hull(ring(rect([c[0], c[1] + 5], [0, 1], 10, 4.4), z1 - p.lidPlate - 1), ring(rect([c[0], c[1] + 5], [0, 1], 10, 4.4), z1 + 1)));
-        lcuts.push(cyl([c[0], c[1] + 10], 2.2, 2.2, z1 - p.lidPlate - 1, z1 + 1, 24));
+        lcuts.push(cyl(c, khR, khR, z1 - p.lidPlate - 1, z1 + 1, 32));
+        lcuts.push(hull(ring(rect([c[0], c[1] + khS / 2], [0, 1], khS, 2 * khRs), z1 - p.lidPlate - 1), ring(rect([c[0], c[1] + khS / 2], [0, 1], khS, 2 * khRs), z1 + 1)));
+        lcuts.push(cyl([c[0], c[1] + khS], khRs, khRs, z1 - p.lidPlate - 1, z1 + 1, 24));
       }
       lidCutsU = T(Manifold.union(lcuts));
       lidM = T(T(Manifold.union(ladds)).subtract(lidCutsU));

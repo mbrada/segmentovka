@@ -200,10 +200,12 @@ pre { margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 1
 .fp-hole { fill: none; stroke: var(--muted); stroke-width: 0.35; }
 .fp-dim { fill: var(--ink); font-family: var(--font-mono); }
 .fp-dim-l { stroke: var(--ink); stroke-width: var(--dw); }
-.fp-dim-t { stroke: var(--ink); stroke-width: calc(var(--dw) * 1.6); }
+.fp-dim-a { fill: var(--ink); stroke: none; }
 .fp-dim-x { stroke: var(--muted); stroke-width: calc(var(--dw) * 0.8); }
-.fp-dim.fix { fill: var(--muted); }
-.fp-dim-l.fix, .fp-dim-t.fix { stroke: var(--muted); }
+/* osa (čerchovaná): délky čárek v mm výkresu podle velikosti otvoru */
+.fp-axis { stroke: var(--muted); stroke-width: calc(var(--dw) * 0.8); fill: none; stroke-dasharray: 3.2 0.7 0.35 0.7; }
+.fp-dim.fix, .fp-dim-a.fix { fill: var(--muted); }
+.fp-dim-l.fix { stroke: var(--muted); }
 /* řádek s hloubkou: měnitelná čísla plnou barvou, ostatní šedě */
 .fp-depth { fill: var(--muted); font-family: var(--font-ui); }
 .fp-depth .ed { fill: var(--ink); }
@@ -334,7 +336,7 @@ pre { margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 1
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
-import { DEFAULTS, computeLayout, lidToPrint, ledMap, USB_PORTS, lidScrewLen, postPeg } from './gen.js';
+import { DEFAULTS, computeLayout, lidToPrint, ledMap, USB_PORTS, lidScrewLen, postPeg, KEYHOLE } from './gen.js';
 import { SYMBOL_PRESETS, METEO } from './symbols.js';
 import { jointPoint } from './split.js';
 import { stl, threeMF, zip } from './export.js';
@@ -424,6 +426,8 @@ const GROUPS = [
     ['usbW', 'Šířka otvoru', 'mm', 3, 40, 0.5],
     ['usbH', 'Výška otvoru', 'mm', 3, 30, 0.5],
     ['keyholes', 'Otvory na zavěšení', 'bool'],
+    ['keyholeGap', 'Rozteč otvorů', 'mm', 0, 1000, 1, 'dva otvory souměrně kolem středu; 0 = automaticky (ve čtvrtinách šířky, u dílů uprostřed každého horního dílu)'],
+    ['keyholeTop', 'Otvory od horní hrany', 'mm', 10, 300, 0.5, 'ke středu velkého otvoru; pouzdro visí na šroubu o 10 mm výš'],
   ] },
   { id: 'split', title: 'Dělení na díly', items: [
     ['splitNote', 'Když se pouzdro nevejde na tiskovou plochu, rozdělí se na díly. Řezy nikdy nevedou přes lůžka LED a pokud to jde, ani přes světlovody. Díly mají u spoje stěny s rybinovými zámky (zasunou se do sebe zezadu) nebo šrouby M3 s maticí a výřezy pro vodiče otevřené dozadu. Stejně se rozdělí i krabička.', 'note'],
@@ -950,7 +954,20 @@ const DIM_BIND = {
   depth: { key: 'depth', own: true, name: 'Hloubka pouzdra', get: (L) => L.p.depth },
   lidDepth: { key: 'lidDepth', own: true, name: 'Hloubka krabičky', get: (L) => L.p.lidDepth },
   peg: { key: 'postSink', name: 'Čepy krabičky', get: (L) => postPeg(L.p).peg },
+  // otvory na zavěšení: rozteč 0 = automaticky, kóta pak vychází ze skutečné rozteče
+  khEdge: { key: 'keyholeGap', name: 'Otvor na zavěšení od levé hrany', get: (L) => L.keyholes[0][0], base: khGapNow, min: 12 },
+  khGap: { key: 'keyholeGap', own: true, name: 'Rozteč otvorů na zavěšení', get: (L) => L.keyholes[1][0] - L.keyholes[0][0], base: khGapNow, min: 12 },
+  khTop: { key: 'keyholeTop', own: true, name: 'Otvory na zavěšení od horní hrany', get: (L) => L.caseH - L.keyholes[L.keyholes.length - 1][1] },
 };
+// výchozí bod pro kolečko a dialog: zadaná rozteč, u automatické ta skutečná
+function khGapNow(L) {
+  if (params.keyholeGap > 0) return params.keyholeGap;
+  const k = L.keyholes;
+  return k.length > 1 ? r2((k[k.length - 1][0] - k[0][0]) / (k.length - 1)) : 0;
+}
+// hodnota parametru, od které se kóta mění, a nejmenší povolená
+const dimBase = (b) => (b.base ? b.base(L) : params[b.key]);
+const dimMin = (b) => (b.min != null ? b.min : paramDef(b.key).min);
 const r2 = (v) => Math.round(v * 100) / 100;
 const r3 = (v) => Math.round(v * 1000) / 1000;
 // [popis, jednotka, min, max, krok] parametru z GROUPS
@@ -973,29 +990,43 @@ function frontDims(L) {
   const W = L.caseW, H = L.caseH, p = L.p;
   const Y = (y) => H - y;
   const f = Math.max(3, Math.min(9, Math.max(W, H) * 0.022)); // písmo kót (mm výkresu)
-  const lv = f * 2.4, t = f * 0.4, ov = t + 0.6;
+  // kótování podle ČSN EN ISO 129-1: plné šipky (délka ≈ výška písma, šířka třetina délky),
+  // číslo nad kótovací čarou, svislé čitelné zprava; vynášecí čáry přesahují kótovací čáru
+  const lv = f * 2.4, A = f * 0.9, aw = A / 6, ov = f * 0.5, gapT = f * 0.3;
   const num = (v) => fmt(v, 2);
   let s = '';
-  // fixní kóty (nejdou měnit) jsou šedé – čára, značky i číslo
-  const tick = (x, y, fx) => `<line x1="${x - t}" y1="${y + t}" x2="${x + t}" y2="${y - t}" class="fp-dim-t${fx}"/>`;
-  const text = (pos, txt, id) => {
-    if (!id) return `<text ${pos} class="fp-dim fix">${txt}<title>odvozený rozměr, nejde měnit</title></text>`;
+  // šipka s hrotem v (x, y) (souřadnice SVG) mířící ve směru (ux, uy);
+  // fixní kóty (nejdou měnit) jsou šedé – čára, šipky i číslo
+  const arrow = (x, y, ux, uy, fx) => {
+    const bx = x - ux * A, by = y - uy * A;
+    return `<path d="M${r2(x)} ${r2(y)}L${r2(bx - uy * aw)} ${r2(by + ux * aw)}L${r2(bx + uy * aw)} ${r2(by - ux * aw)}Z" class="fp-dim-a${fx}"/>`;
+  };
+  // kótovací čára od (ax, ay) do (bx, by) se šipkami; na krátké kótě jsou šipky zvenku
+  // a čára pokračuje za vynášecí čáry
+  const dline = (ax, ay, bx, by, fx) => {
+    const len = Math.hypot(bx - ax, by - ay), ux = (bx - ax) / len, uy = (by - ay) / len;
+    const out = len < 2 * A + 1, e = out ? A + gapT * 2 : 0;
+    return `<line x1="${r2(ax - ux * e)}" y1="${r2(ay - uy * e)}" x2="${r2(bx + ux * e)}" y2="${r2(by + uy * e)}" class="fp-dim-l${fx}"/>`
+      + (out ? arrow(ax, ay, ux, uy, fx) + arrow(bx, by, -ux, -uy, fx) : arrow(ax, ay, -ux, -uy, fx) + arrow(bx, by, ux, uy, fx));
+  };
+  const text = (pos, txt, id, tip) => {
+    if (!id) return `<text ${pos} class="fp-dim fix">${txt}<title>${tip || 'odvozený rozměr, nejde měnit'}</title></text>`;
     const a = dimAttr(L, id, f * 0.9);
     return `<text ${pos} class="fp-dim ed"${a.attr}>${txt}${a.tip}</text>`;
   };
   const label = (txt, len, along) => {
-    // krátká kóta: text za koncem čáry
+    // krátká kóta: číslo nad prodlouženou kótovací čarou za koncem
     const tw = String(txt).length * f * 0.58;
-    return len >= tw + 1 ? along(len / 2) : along(len + tw / 2 + t + 0.8);
+    return len >= tw + 1 ? along(len / 2) : along(len + tw / 2 + gapT + 0.8);
   };
   // vodorovná kóta x0–x1 na výšce y; vynášecí čáry od bodů (x0, ya) a (x1, yb)
-  const hdim = (x0, x1, y, ya, yb, id) => {
+  const hdim = (x0, x1, y, ya, yb, id, tip) => {
     if (x1 - x0 < 0.05) return;
     const txt = num(x1 - x0), fx = id ? '' : ' fix';
     const d = y > ya ? 1 : -1;
     for (const [x, yf] of [[x0, ya], [x1, yb]]) s += `<line x1="${x}" y1="${Y(yf + d)}" x2="${x}" y2="${Y(y + d * ov)}" class="fp-dim-x"/>`;
-    s += `<line x1="${x0}" y1="${Y(y)}" x2="${x1}" y2="${Y(y)}" class="fp-dim-l${fx}"/>${tick(x0, Y(y), fx)}${tick(x1, Y(y), fx)}`;
-    s += label(txt, x1 - x0, (a) => text(`x="${x0 + a}" y="${Y(y) - f * 0.35}" font-size="${f}" text-anchor="middle"`, txt, id));
+    s += dline(x0, Y(y), x1, Y(y), fx);
+    s += label(txt, x1 - x0, (a) => text(`x="${r2(x0 + a)}" y="${r2(Y(y) - gapT)}" font-size="${f}" text-anchor="middle"`, txt, id, tip));
   };
   // svislá kóta y0–y1 na x; vynášecí čáry od bodů (xa, y0) a (xb, y1); text čte zdola
   const vdim = (y0, y1, x, xa, xb, id) => {
@@ -1003,8 +1034,8 @@ function frontDims(L) {
     const txt = num(y1 - y0), fx = id ? '' : ' fix';
     const d = x > xa ? 1 : -1;
     for (const [xf, yy] of [[xa, y0], [xb, y1]]) s += `<line x1="${xf + d}" y1="${Y(yy)}" x2="${x + d * ov}" y2="${Y(yy)}" class="fp-dim-x"/>`;
-    s += `<line x1="${x}" y1="${Y(y0)}" x2="${x}" y2="${Y(y1)}" class="fp-dim-l${fx}"/>${tick(x, Y(y0), fx)}${tick(x, Y(y1), fx)}`;
-    s += label(txt, y1 - y0, (a) => text(`transform="translate(${x - f * 0.35} ${Y(y0 + a)}) rotate(-90)" font-size="${f}" text-anchor="middle"`, txt, id));
+    s += dline(x, Y(y0), x, Y(y1), fx);
+    s += label(txt, y1 - y0, (a) => text(`transform="translate(${r2(x - gapT)} ${r2(Y(y0 + a))}) rotate(-90)" font-size="${f}" text-anchor="middle"`, txt, id));
   };
 
   // první číslice (nebo mínus/stupeň) – rozměry jejího obrysu, u sklonu na šikmé hraně
@@ -1030,14 +1061,26 @@ function frontDims(L) {
   vdim(0, H, W + top * lv, W, W, 'caseH');
   hdim(0, W, -2 * lv, 0, 0, c ? 'caseW' : null); // bez číslic šířka na digitW nezávisí
 
-  // otvory na zavěšení: obrys čárkovaně, rozteč nahoře, vzdálenost od horní hrany vpravo
+  // otvory na zavěšení: obrys čárkovaně (zakrytý zadní deskou), osy čerchovaně; kóty k osám –
+  // od levé hrany a rozteč nahoře, od horní hrany vpravo. Dva otvory: kóty posouvají otvory
+  // (rozteč souměrně kolem středu), jinak (u dílů víc otvorů) je rozteč daná díly.
   if (kh.length) {
+    const { r, slot, rs } = KEYHOLE, ys = Math.sqrt(r * r - rs * rs), ax = 1.5;
     for (const [kx, ky] of kh) {
-      s += `<path d="M${kx - 2.2} ${Y(ky + 10)} V${Y(ky + 3.6)} A4.2 4.2 0 1 0 ${kx + 2.2} ${Y(ky + 3.6)} V${Y(ky + 10)} A2.2 2.2 0 1 0 ${kx - 2.2} ${Y(ky + 10)} Z" class="fp-post"><title>otvor na zavěšení</title></path>`;
+      s += `<path d="M${r2(kx - rs)} ${r2(Y(ky + slot))} V${r2(Y(ky + ys))} A${r} ${r} 0 1 0 ${r2(kx + rs)} ${r2(Y(ky + ys))} V${r2(Y(ky + slot))} A${rs} ${rs} 0 1 0 ${r2(kx - rs)} ${r2(Y(ky + slot))} Z" class="fp-post"><title>otvor na zavěšení</title></path>`;
+      // osy od středu ven, aby se křížily čárkou; nahoru až k vynášecí čáře rozteče
+      const yc = Y(ky);
+      s += `<path d="M${r2(kx)} ${r2(yc)}V${r2(Y(ky + slot + rs + 1))}M${r2(kx)} ${r2(yc)}V${r2(Y(ky - r - ax))}M${r2(kx)} ${r2(yc)}H${r2(kx - r - ax)}M${r2(kx)} ${r2(yc)}H${r2(kx + r + ax)}" class="fp-axis"/>`;
     }
+    const two = kh.length === 2;
     let x0 = 0;
-    for (const [kx, ky] of kh) { hdim(x0, kx, H + 2 * lv, x0 ? ky + 12.2 : H, ky + 12.2); x0 = kx; }
-    vdim(kh[0][1], H, W + lv, W, W);
+    kh.forEach(([kx, ky], i) => {
+      hdim(x0, kx, H + 2 * lv, x0 ? ky + slot + rs : H, ky + slot + rs, two ? (i ? 'khGap' : 'khEdge') : null,
+        'otvor je uprostřed každého horního dílu; dva otvory se zvolenou roztečí nastavíte v panelu (Zadní krabička → Rozteč otvorů)');
+      x0 = kx;
+    });
+    const [lx, ly] = kh[kh.length - 1];
+    vdim(ly, H, W + lv, lx + r + ax - 1, W, 'khTop');
   }
   const m = lv + f + 3;
   return { svg: `<g class="dims" style="--dw:${(f * 0.065).toFixed(3)}">${s}</g>`, pad: [m, top * lv + f + 3, top * lv + f + 3, 2 * lv + f + 3], f };
@@ -1408,15 +1451,22 @@ function syncDimUndo() {
 }
 // krok parametru kóty o n kroků (z popisu parametru v GROUPS), v jeho rozsahu
 function stepDim(id, n) {
-  const b = DIM_BIND[id], d = paramDef(b.key);
-  setParam(b.key, r3(Math.min(d.max, Math.max(d.min, params[b.key] + n * d.step))));
+  const b = DIM_BIND[id], d = paramDef(b.key), v0 = dimBase(b);
+  // kolečko nahoru kótu zvětší, i když s parametrem klesá (otvor od levé hrany a rozteč)
+  if (!b.own) {
+    try {
+      const at = (v) => b.get(computeLayout({ ...params, [b.key]: v }));
+      if (at(v0 + d.step) < at(v0)) n = -n;
+    } catch (_) { /* nechat směr */ }
+  }
+  setParam(b.key, r3(Math.min(d.max, Math.max(dimMin(b), v0 + n * d.step))));
 }
 // hodnota parametru, při které má kóta délku target; kóty jsou v parametru lineární,
 // sečnám tedy stačí jeden dva kroky (null = kótu tím parametrem na target nastavit nejde)
 function solveDim(b, target) {
   const f = (v) => b.get(computeLayout({ ...params, [b.key]: v })) - target;
   try {
-    let v0 = params[b.key], f0 = f(v0);
+    let v0 = dimBase(b), f0 = f(v0);
     if (Math.abs(f0) < 1e-4) return v0;
     let v1 = v0 + paramDef(b.key).step, f1 = f(v1);
     for (let i = 0; i < 20 && Math.abs(f1) >= 1e-4; i++) {
@@ -1426,6 +1476,20 @@ function solveDim(b, target) {
     }
     return Number.isFinite(f1) && Math.abs(f1) < 0.005 ? r3(v1) : null;
   } catch (_) { return null; }
+}
+
+// Proč kótu nastavit nejde: varování, které by přibylo při hodnotě odhadnuté z lineárního průběhu
+// (např. otvor by zasáhl do spoje dílů, nebo se rozteč nevejde na šířku pouzdra).
+function dimFailHint(b, target) {
+  try {
+    const v0 = dimBase(b), st = paramDef(b.key).step;
+    const at = (v) => computeLayout({ ...params, [b.key]: v });
+    const g0 = b.get(at(v0)), k = (b.get(at(v0 + st)) - g0) / st;
+    if (!k) return '';
+    const fresh = at(v0 + (target - g0) / k).warnings.filter((x) => !L.warnings.includes(x));
+    const w = fresh.find((x) => x.includes('zavěšení')) || fresh[0];
+    return w ? ` ${w}` : '';
+  } catch (_) { return ''; }
 }
 
 // Kolečko: jeden krok na zub kolečka, touchpad se sčítá. Po dobu točení zůstává vybraná
@@ -1481,7 +1545,8 @@ function openDimPop(el) {
   popId = id;
   $('#dim-name').textContent = b.name;
   inp.value = String(r2(b.get(L))).replace('.', ',');
-  dimNote(b.own ? `Rozsah ${fmt(d.min)}–${fmt(d.max)} mm.` : `Změní se parametr „${d.label}“ (teď ${fmt(params[b.key], 2)} mm).`);
+  const auto = b.base && !params[b.key] ? ' Teď se volí automaticky, zadáním se zafixuje.' : '';
+  dimNote(b.own ? `Rozsah ${fmt(dimMin(b))}–${fmt(d.max)} mm.${auto}` : `Změní se parametr „${d.label}“ (teď ${fmt(dimBase(b), 2)} mm).${auto}`);
   const e = dimEdited().get(b.key), rv = $('#dim-revert');
   rv.hidden = !e;
   if (e) {
@@ -1513,9 +1578,9 @@ $('#dim-pop').addEventListener('submit', (e) => {
   const fail = (msg) => { dimNote(msg, true); $('#dim-val').focus(); };
   if ($('#dim-val').value.trim() === '' || !Number.isFinite(t) || t < 0) return fail('Zadejte rozměr v milimetrech, třeba 42,5.');
   const v = solveDim(b, t);
-  if (v == null) return fail('Na tuto hodnotu kótu nastavit nejde.');
-  if (v < d.min - 1e-9 || v > d.max + 1e-9) {
-    return fail(`Parametr „${d.label}“ by musel být ${fmt(v, 2)} mm, povolený rozsah je ${fmt(d.min)}–${fmt(d.max)} mm.`);
+  if (v == null) return fail(`Na tuto hodnotu kótu nastavit nejde.${dimFailHint(b, t)}`);
+  if (v < dimMin(b) - 1e-9 || v > d.max + 1e-9) {
+    return fail(`Parametr „${d.label}“ by musel být ${fmt(v, 2)} mm, povolený rozsah je ${fmt(dimMin(b))}–${fmt(d.max)} mm.`);
   }
   closeDimPop();
   setParam(b.key, v);

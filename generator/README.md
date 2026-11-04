@@ -15,7 +15,9 @@ Běží na https://segmentovka.miloslavbrada.cz
   (teplota, vlhkost, tlak, CO₂); tlačítka „Meteostanice“ zapínají jednotlivé veličiny
   nebo všechny, písmo se do výšky číslice případně zmenší; mapa LED má `SYM_TEPLOTA` …
 - výstupy: pouzdro (tisk čelem dolů), difuzory do 1mm vybrání, zadní krabička se sloupky,
-  otvorem pro kabel a otvory na zavěšení; 3MF má pouzdro a difuzory jako dva díly jednoho
+  otvorem pro kabel a otvory na zavěšení (klíčová dírka `KEYHOLE`; rozteč `keyholeGap`,
+  0 = automaticky ve čtvrtinách šířky nebo uprostřed horních dílů; od horní hrany `keyholeTop`;
+  ze zóny spojů dílů se odsunou); 3MF má pouzdro a difuzory jako dva díly jednoho
   objektu (tisk s AMS), mapa LED pro firmware
 - otvor pro kabel: v boku krabičky (vlevo, vpravo, dole, nahoře) nebo v zadní stěně v mřížce
   3 × 3; volí se obrázkem krabičky v čelním pohledu a sám uhne sloupkům, otvorům na zavěšení
@@ -27,8 +29,11 @@ Běží na https://segmentovka.miloslavbrada.cz
   rozměry, rozteč otvorů na zavěšení a jejich vzdálenost od horní hrany, hloubka v popisku;
   čísla kót jdou měnit kolečkem myši (o krok parametru, se Shiftem ×10), šipkami, nebo kliknutím
   a zadáním hodnoty – odvozené kóty (celková šířka a výška, okraj nahoře a dole, čepy) se
-  dopočítají přes parametr, na kterém závisí (`DIM_BIND` v `page.html`); rozteč otvorů na
-  zavěšení je dána šířkou pouzdra a měnit nejde, takové fixní kóty jsou šedé; změny z kót jdou
+  dopočítají přes parametr, na kterém závisí (`DIM_BIND` v `page.html`); kóty otvorů na
+  zavěšení otvory posouvají (rozteč souměrně kolem středu, vzdálenost od horní hrany), velikost
+  pouzdra nemění; kóty, které měnit nejde (např. otvory u tří a více horních dílů), jsou šedé;
+  kótuje se podle ČSN EN ISO 129-1 – plné šipky, u krátkých kót zvenku, číslo nad kótovací
+  čarou, svislé čitelné zprava, otvory k osám (čerchovaně); změny z kót jdou
   vrátit tlačítkem „Vrátit změny kót“ nebo po jedné v dialogu kóty (na hodnotu před změnami
   ve výkresu; změna parametru v panelu se bere jako nový výchozí bod)
 - popisek pod čelním pohledem se zalamuje do šířky výkresu, u úzkých pouzder se zmenší písmo

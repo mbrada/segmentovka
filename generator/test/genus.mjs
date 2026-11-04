@@ -5,7 +5,7 @@
 //  - drobné uzavřené bublinky mezi stěnami sousedních světlovodů jen hlásí – tisku nevadí.
 // Použití: node test/genus.mjs
 import Module from '../manifold.js';
-import { computeLayout, buildModels, USB_PORTS, lidScrewLen } from '../gen.js';
+import { computeLayout, buildModels, USB_PORTS, lidScrewLen, KEYHOLE } from '../gen.js';
 import { SYMBOL_PRESETS } from '../symbols.js';
 
 const M = await Module();
@@ -134,5 +134,36 @@ for (const [name, pr, ports] of [
   ['88:88 obří', { layout: '88:88', ...big }, ['bottom', 'right', 'top', 'back-c', 'back-tl', 'back-b']],
   ['88888888 A1 mini', { layout: '88888888', bedW: 180, bedH: 180 }, ['bottom', 'top', 'back-c', 'back-t']],
 ]) console.log(name.padEnd(20), checkLid(pr, ports));
+
+// Otvory na zavěšení: každý je celý průchozí otvor v zadní desce (genus krabičky o 1 víc
+// na otvor) a nezasáhne do spojů dílů ani sloupků – úbytek objemu = plocha otvoru × deska.
+function checkKeyholes(params) {
+  const lidsOf = (pr) => {
+    const L = computeLayout({ usb: 'none', ...pr });
+    const R = buildModels(M, L);
+    return { L, lids: R.pieces ? R.pieces.map((q) => q.lid) : [R.lid] };
+  };
+  const a = lidsOf({ ...params, keyholes: false }), b = lidsOf(params);
+  const n = b.L.keyholes.length;
+  const genus = (lids) => lids.reduce((s, m) => s + m.genus, 0);
+  const vol = (lids) => lids.reduce((s, m) => s + m.volume, 0);
+  const { r, slot, rs } = KEYHOLE;
+  // velký kruh + drážka bez části uvnitř kruhu + horní půlka malého kruhu na konci drážky
+  const inCircle = rs * Math.sqrt(r * r - rs * rs) + r * r * Math.asin(rs / r);
+  const area = Math.PI * r * r + 2 * rs * slot - inCircle + (Math.PI * rs * rs) / 2;
+  const want = n * area * b.L.p.lidPlate, got = vol(a.lids) - vol(b.lids);
+  const dg = genus(b.lids) - genus(a.lids);
+  const ok = b.lids.every((m) => m.status === 'NoError') && dg === n && Math.abs(got - want) < 0.03 * want + 1;
+  if (!ok) bad++;
+  const pos = b.L.keyholes.map(([x, y]) => `${x.toFixed(1)}/${(b.L.caseH - y).toFixed(1)}`).join(' ');
+  return `${n} otvory [${pos}] genus +${dg}, úbytek ${got.toFixed(0)}/${want.toFixed(0)} mm³${b.L.warnings.length ? ' · ' + b.L.warnings.join(' · ') : ''}${ok ? ' ok' : ' !!'}`;
+}
+for (const [name, pr] of [
+  ['88:88 auto', { layout: '88:88' }],
+  ['88:88 rozteč 150/40', { layout: '88:88', keyholeGap: 150, keyholeTop: 40 }],
+  ['88888888 díly auto', { layout: '88888888' }],
+  ['88888888 u spoje', { layout: '88888888', keyholeGap: 100 }],
+  ['88:88 obří řez', { layout: '88:88', ...big, keyholeTop: 175 }],
+]) console.log(name.padEnd(20), checkKeyholes(pr));
 console.log(bad ? `CHYBA: ${bad} kombinací` : 'OK');
 process.exitCode = bad ? 1 : 0;
