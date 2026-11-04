@@ -60,7 +60,9 @@ Běží na https://segmentovka.miloslavbrada.cz
   `gtag.js` se načte až po kliknutí na Přijmout; volba v `localStorage` na 12 měsíců, odvolání
   odkazem Nastavení cookies v patičce (smaže cookies `_ga*`); `build.sh` ho vkládá jen do `dist/`
 - `manifold.js`, `manifold.wasm` – manifold-3d 3.5.4 (Apache-2.0, `manifold-LICENSE.txt`)
-- `build.sh` – složí samostatný web do `dist/`
+- `build.sh` – složí samostatný web do `dist/`; přidá SEO hlavičku (canonical, Open Graph,
+  JSON-LD WebApplication z `<title>` a description v `page.html`), `robots.txt` a `sitemap.xml`
+- `og.png` – náhled odkazu 1200 × 630; vzniká z `tools/og.mjs` (displej z generátoru) přes Inkscape
 - `deploy.sh` – sestaví a nasadí `dist/` na server (`/srv/www/segmentovka`, nginx)
 
 ## Lokálně
