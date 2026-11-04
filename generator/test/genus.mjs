@@ -5,7 +5,7 @@
 //  - drobné uzavřené bublinky mezi stěnami sousedních světlovodů jen hlásí – tisku nevadí.
 // Použití: node test/genus.mjs
 import Module from '../manifold.js';
-import { computeLayout, buildModels } from '../gen.js';
+import { computeLayout, buildModels, USB_PORTS, lidScrewLen } from '../gen.js';
 import { SYMBOL_PRESETS } from '../symbols.js';
 
 const M = await Module();
@@ -93,5 +93,46 @@ for (const [name, pr] of [
   ['-88.8[°C] velké', { layout: '-88.8[°C]', digitH: 200, digitW: 90, segW: 20, symH: 40, symStroke: 4 }],
   ['88:88 jen šrouby', { layout: '88:88', ...big, joinType: 'screws' }],
 ]) console.log(name.padEnd(20), checkSplit(pr));
+
+// Krabička: čepy sloupků zasahují do pouzdra bez kolize (průnik sestavených dílů = 0)
+// a otvor pro kabel je v každé poloze celý – úbytek objemu = otvor × tloušťka stěny,
+// tedy nezasáhl sloupky, otvory na zavěšení ani spojové stěny dílů.
+const man = (m) => new M.Manifold(new M.Mesh({ numProp: 3, vertProperties: m.vert, triVerts: m.tri }));
+const unionOf = (meshes) => { const ms = meshes.map(man), u = M.Manifold.union(ms); for (const q of ms) q.delete(); return u; };
+function checkLid(params, ports) {
+  const L0 = computeLayout({ ...params, usb: 'none' });
+  const R0 = buildModels(M, L0);
+  const cases = R0.pieces ? R0.pieces.map((q) => q.case) : [R0.case];
+  const lids0 = R0.pieces ? R0.pieces.map((q) => q.lid) : [R0.lid];
+  const c = unionOf(cases), l = unionOf(lids0), x = c.intersect(l);
+  const clash = x.volume();
+  [c, l, x].forEach((q) => q.delete());
+  const vol0 = lids0.reduce((s, m) => s + m.volume, 0);
+  const msgs = [];
+  let ok = clash < 0.01;
+  if (!ok) msgs.push(`průnik pouzdra a krabičky ${clash.toFixed(2)} mm³`);
+  for (const usb of ports) {
+    const L = computeLayout({ ...params, usb });
+    const R = buildModels(M, L);
+    const lids = R.pieces ? R.pieces.map((q) => q.lid) : [R.lid];
+    const want = L.usb ? L.p.usbW * L.p.usbH * (L.usb.side ? L.p.lidWall : L.p.lidPlate) : 0;
+    const got = vol0 - lids.reduce((s, m) => s + m.volume, 0);
+    if (!L.usb || lids.some((m) => m.status !== 'NoError') || Math.abs(got - want) > 1) {
+      ok = false;
+      msgs.push(`${usb}: ${L.usb ? `úbytek ${got.toFixed(1)} místo ${want.toFixed(1)} mm³` : 'otvor se nevešel'}`);
+    }
+  }
+  if (!ok) bad++;
+  return `${R0.pieces ? `${R0.pieces.length} dílů, ` : ''}šrouby M3 × ${lidScrewLen(L0.p).join('–')}, poloh otvoru ${ports.length}${msgs.length ? ' ' + msgs.join('; ') : ''}${ok ? ' ok' : ' !!'}`;
+}
+const ALL_PORTS = Object.keys(USB_PORTS).filter((k) => k !== 'none');
+for (const [name, pr, ports] of [
+  ['88:88', { layout: '88:88' }, ALL_PORTS],
+  ['8.8 malé', { layout: '8.8' }, ALL_PORTS],
+  ['888.8[°C|%] sklon', { layout: '888.8[°C|%]', slant: 8 }, ALL_PORTS],
+  ['88:88 bez čepů', { layout: '88:88', postSink: 0 }, ['right', 'back-c']],
+  ['88:88 obří', { layout: '88:88', ...big }, ['bottom', 'right', 'top', 'back-c', 'back-tl', 'back-b']],
+  ['88888888 A1 mini', { layout: '88888888', bedW: 180, bedH: 180 }, ['bottom', 'top', 'back-c', 'back-t']],
+]) console.log(name.padEnd(20), checkLid(pr, ports));
 console.log(bad ? `CHYBA: ${bad} kombinací` : 'OK');
 process.exitCode = bad ? 1 : 0;

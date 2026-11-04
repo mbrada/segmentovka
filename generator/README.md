@@ -17,6 +17,14 @@ Běží na https://segmentovka.miloslavbrada.cz
 - výstupy: pouzdro (tisk čelem dolů), difuzory do 1mm vybrání, zadní krabička se sloupky,
   otvorem pro kabel a otvory na zavěšení; 3MF má pouzdro a difuzory jako dva díly jednoho
   objektu (tisk s AMS), mapa LED pro firmware
+- otvor pro kabel: v boku krabičky (vlevo, vpravo, dole, nahoře) nebo v zadní stěně v mřížce
+  3 × 3; volí se obrázkem krabičky v čelním pohledu a sám uhne sloupkům, otvorům na zavěšení
+  a spojům dílů (`USB_PORTS`, `cablePort` v `gen.js`)
+- čepy sloupků: sloupky pouzdra jsou o `postSink` nižší a sloupky krabičky do nich zasahují
+  čepem s vůlí `postFit` ke stěnám – tužší spoj a krabička sedí přesně; délka šroubů se podle
+  toho přepočítá (`lidScrewLen`)
+- čelní pohled umí kóty: okraje, šířka a výška číslice, mezera, tloušťka segmentu, celkové
+  rozměry, rozteč otvorů na zavěšení a jejich vzdálenost od horní hrany, hloubka v popisku
 - dělení na díly (`split.js`): když se pouzdro nevejde na tiskovou plochu, rozdělí se rovnými
   řezy, které nevedou přes lůžka LED a co nejméně přes světlovody; na spoji mají díly stěny
   s rybinovými zámky (zasunou se zezadu) a/nebo šrouby M3 s maticí, ve stěnách jsou výřezy pro

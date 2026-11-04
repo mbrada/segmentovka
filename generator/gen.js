@@ -28,9 +28,10 @@ export const DEFAULTS = {
   postSize: 11, midPostW: 8, screwD: 2.9, screwDepth: 25, extraPosts: true,
   // difuzory
   diffuser: true, diffClear: 0.2, diffT: 1,
-  // zadní víko (krabička)
+  // zadní víko (krabička); sloupky pouzdra jsou o postSink nižší a sloupky krabičky do nich
+  // zasahují čepem s vůlí postFit; otvor pro kabel viz USB_PORTS
   lid: true, lidDepth: 30, lidWall: 2, lidPlate: 3, lidScrewD: 3.4, lidHeadD: 6.5,
-  lidClamp: 3, usb: 'right', usbW: 12, usbH: 7, keyholes: true,
+  lidClamp: 3, postSink: 3, postFit: 0.2, usb: 'right', usbW: 12, usbH: 7, keyholes: true,
   // dělení na díly podle tiskové plochy
   splitMode: 'auto', bedW: 256, bedH: 256, joinType: 'both', jointWall: 2.5, joinClear: 0.15,
   notchW: 14, notchH: 12,
@@ -38,6 +39,33 @@ export const DEFAULTS = {
   segOrder: 'abcdefg',
   quality: 40,
 };
+
+// Otvor pro kabel v čelním pohledu: v boku krabičky uprostřed strany, nebo v zadní stěně
+// v mřížce 3 × 3 (back-<svisle><vodorovně>: t/b = nahoře/dole, l/r = vlevo/vpravo, c = střed).
+export const USB_PORTS = {
+  right: 'v boku vpravo', left: 'v boku vlevo', bottom: 'v boku dole', top: 'v boku nahoře',
+  'back-tl': 'vzadu vlevo nahoře', 'back-t': 'vzadu nahoře', 'back-tr': 'vzadu vpravo nahoře',
+  'back-l': 'vzadu vlevo', 'back-c': 'vzadu uprostřed', 'back-r': 'vzadu vpravo',
+  'back-bl': 'vzadu vlevo dole', 'back-b': 'vzadu dole', 'back-br': 'vzadu vpravo dole',
+  none: 'bez otvoru',
+};
+
+// Čepy sloupků: o kolik je sloupek pouzdra nižší a jak dlouhý čep na něj z krabičky dosedá
+// (0,3 mm osová vůle, aby krabička vždy dosedla okrajem).
+export function postPeg(p) {
+  const sink = p.lid ? Math.max(0, Math.min(p.postSink, p.depth - p.front - 1)) : 0;
+  const peg = sink - 0.3;
+  return peg >= 0.3 ? { sink, peg } : { sink: 0, peg: 0 };
+}
+
+// Doporučená délka šroubů krabičky (M3): projde dnem pod hlavou a čepem, do pouzdra 8–13 mm.
+export function lidScrewLen(p) {
+  const STD = [8, 10, 12, 14, 16, 18, 20, 25, 30, 35, 40, 45, 50];
+  const pass = p.lidClamp + postPeg(p).peg;
+  const lo = STD.find((s) => s >= pass + 8) ?? STD[STD.length - 1];
+  const hi = [...STD].reverse().find((s) => s <= pass + Math.min(13, p.screwDepth - 1)) ?? lo;
+  return [lo, Math.max(lo, hi)];
+}
 
 const GLYPH_SEGS = { digit: 'abcdefg', one: 'bc', minus: 'g', deg: 'abfg', blank: '' };
 const DIGITLIKE = new Set(['digit', 'one', 'minus', 'deg', 'blank', 'sym']);
@@ -409,14 +437,63 @@ export function computeLayout(params) {
       : [caseW * 0.25, caseW * 0.75];
     keyholes = xs.map((kx) => [kx, caseH - 26]);
   }
-  // otvor pro kabel dole: uprostřed spodního dílu nejblíž 30 % šířky
-  let usbX = caseW * 0.3;
-  if (split.n > 1) {
-    const bottom = split.pieces.filter((q) => q.j === 0).map((q) => (q.r[0] + q.r[2]) / 2);
-    usbX = bottom.reduce((a, b) => (Math.abs(b - caseW * 0.3) < Math.abs(a - caseW * 0.3) ? b : a), bottom[0]);
-  }
+  const usb = cablePort(p, caseW, caseH, posts, split, keyholes, warnings);
 
-  return { p, cells, els, posts, caseW, caseH, offX, offY, warnings, z, rOut, minD, split, keyholes, usbX };
+  return { p, cells, els, posts, caseW, caseH, offX, offY, warnings, z, rOut, minD, split, keyholes, usb };
+}
+
+// Otvor pro kabel: obdélník v čelních souřadnicích (u boku pás přes celou stěnu krabičky).
+// Z požadované polohy se posune na nejbližší místo mimo sloupky, otvory na zavěšení a spoje dílů.
+function cablePort(p, W, H, posts, split, keyholes, warnings) {
+  if (!p.lid || !USB_PORTS[p.usb] || p.usb === 'none') return null;
+  const lw = p.lidWall, hw = p.usbW / 2, hh = p.usbH / 2;
+  const postR = p.lidHeadD / 2 + 1.6;
+  const jm = p.jointWall + Math.max(JOINT.padT, JOINT.dove.td + JOINT.dove.boss) + 1;
+  const dist = ([x0, y0, x1, y1], [px, py]) => Math.hypot(Math.max(0, x0 - px, px - x1), Math.max(0, y0 - py, py - y1));
+  const free = (bb, back) => posts.every((po) => dist(bb, po.h) >= postR + (back ? 1 : 0.3))
+    && (!back || keyholes.every(([kx, ky]) => bb[2] < kx - 5.2 || bb[0] > kx + 5.2 || bb[3] < ky - 5.2 || bb[1] > ky + 13.2))
+    && split.joints.every((J) => {
+      const [a0, a1, b0, b1] = J.dir === 'v' ? [bb[0], bb[2], bb[1], bb[3]] : [bb[1], bb[3], bb[0], bb[2]];
+      return b1 < J.from || b0 > J.to || a1 < J.at - jm || a0 > J.at + jm;
+    });
+  const what = USB_PORTS[p.usb];
+  if (!p.usb.startsWith('back')) {
+    if (p.usbH > p.lidDepth - p.lidPlate - 1) warnings.push(`Otvor pro kabel (${p.usbH} mm) je vyšší než bok krabičky – zvětšete hloubku krabičky.`);
+    // poloha podél strany: u boků vlevo/vpravo svisle, dole/nahoře vodorovně
+    const vert = p.usb === 'left' || p.usb === 'right';
+    const len = vert ? H : W;
+    const strip = (t) => (p.usb === 'right' ? [W - lw - 1, t - hw, W + 1, t + hw]
+      : p.usb === 'left' ? [-1, t - hw, lw + 1, t + hw]
+        : p.usb === 'bottom' ? [t - hw, -1, t + hw, lw + 1] : [t - hw, H - lw - 1, t + hw, H + 1]);
+    for (let d = 0; d <= len / 2; d += 0.5) {
+      for (const t of d ? [len / 2 - d, len / 2 + d] : [len / 2]) {
+        if (t - hw < lw + 1 || t + hw > len - lw - 1) continue;
+        const bb = strip(t);
+        if (free(bb, false)) return { port: p.usb, side: true, bb };
+      }
+    }
+  } else {
+    // zadní stěna: kraje mřížky za rohovými sloupky, střed uprostřed
+    const pos = p.usb.slice(5);
+    const e = Math.max(p.postSize, p.wall + (p.postSize - p.wall) / 2 + postR) + 3;
+    const tx = pos.includes('l') ? e + hw : pos.includes('r') ? W - e - hw : W / 2;
+    const ty = pos.includes('b') ? e + hh : pos.includes('t') ? H - e - hh : H / 2;
+    const ok = (x, y) => x - hw >= lw + 1 && x + hw <= W - lw - 1 && y - hh >= lw + 1 && y + hh <= H - lw - 1
+      && free([x - hw, y - hh, x + hw, y + hh], true);
+    // nejbližší volné místo po 1 mm: čtvercové prstence kolem cíle, dokud mohou mít bližší bod
+    let best = null, bd = Infinity;
+    for (let r = 0; r <= Math.max(W, H) && r <= bd; r++) {
+      const ring = r ? [] : [[0, 0]];
+      for (let i = -r; r && i <= r; i++) ring.push([i, -r], [i, r], [-r, i], [r, i]);
+      for (const [dx, dy] of ring) {
+        const d = Math.hypot(dx, dy);
+        if (d < bd && ok(tx + dx, ty + dy)) { bd = d; best = [tx + dx, ty + dy]; }
+      }
+    }
+    if (best) return { port: p.usb, side: false, bb: [best[0] - hw, best[1] - hh, best[0] + hw, best[1] + hh] };
+  }
+  warnings.push(`Otvor pro kabel ${what} se nevešel mimo sloupky${split.n > 1 ? ' a spoje dílů' : ''} – zvolte jinou polohu nebo menší otvor.`);
+  return null;
 }
 
 export function zStack(p) {
@@ -460,12 +537,20 @@ export function buildModels(M, L, opts = {}) {
     const adds = [T(outer.subtract(inner))];
     const cuts = [];
 
+    // box z obdélníku v čelních souřadnicích
+    const boxF = ([x0, y0, x1, y1], z0, z1) => { const a = mx([x1, y0]), b = mx([x0, y1]); return box(a[0], a[1], z0, b[0], b[1], z1); };
+    // část sloupku uvnitř pouzdra (bez boční stěny), sem zasahuje čep krabičky
+    const postInner = ([x0, y0, x1, y1], d = 0) => {
+      const r = [Math.max(x0, p.wall) + d, Math.max(y0, p.wall) + d, Math.min(x1, W - p.wall) - d, Math.min(y1, H - p.wall) - d];
+      return r[2] - r[0] > 1 && r[3] - r[1] > 1 ? r : null;
+    };
+    const { sink, peg } = postPeg(p);
     for (const po of L.posts) {
-      const [x0, y0, x1, y1] = po.r;
-      const a = mx([x1, y0]), b = mx([x0, y1]);
-      adds.push(box(a[0], a[1], 0, b[0], b[1], p.depth));
+      adds.push(boxF(po.r, 0, p.depth));
       const hpt = mx(po.h);
       cuts.push(cyl(hpt, p.screwD / 2, p.screwD / 2, p.depth - p.screwDepth, p.depth + 1, 24));
+      const ir = sink > 0 && postInner(po.r);
+      if (ir) cuts.push(boxF(ir, p.depth - sink, p.depth + 1));
     }
 
     const rT = p.tubeEndD / 2, rOut = L.rOut, rTo = rT + p.tubeWall;
@@ -554,19 +639,16 @@ export function buildModels(M, L, opts = {}) {
       for (const po of L.posts) {
         const hpt = mx(po.h);
         ladds.push(cyl(hpt, postR, postR, z0, z1, 32));
-        lcuts.push(cyl(hpt, p.lidScrewD / 2, p.lidScrewD / 2, z0 - 1, z1 + 1, 24));
+        // čep: sloupek krabičky pokračuje do kapsy ve sloupku pouzdra (s vůlí ke stěnám)
+        const ir = peg > 0 && postInner(po.r, p.postFit);
+        if (ir) ladds.push(T(cyl(hpt, postR, postR, z0 - peg, z0 + 0.5, 32).intersect(boxF(ir, z0 - peg - 1, z0 + 1))));
+        lcuts.push(cyl(hpt, p.lidScrewD / 2, p.lidScrewD / 2, z0 - peg - 1, z1 + 1, 24));
         lcuts.push(cyl(hpt, p.lidHeadD / 2, p.lidHeadD / 2, z0 + p.lidClamp, z1 + 1, 32));
       }
-      // otvor pro kabel / USB
-      if (p.usb && p.usb !== 'none') {
+      // otvor pro kabel: v boku uprostřed výšky krabičky, vzadu skrz zadní desku
+      if (L.usb) {
         const zc = z0 + (p.lidDepth - p.lidPlate) / 2;
-        const hw = p.usbW / 2, hh = p.usbH / 2;
-        if (p.usb === 'right') lcuts.push(box(-1, H / 2 - hw, zc - hh, lw + 1, H / 2 + hw, zc + hh));
-        else if (p.usb === 'left') lcuts.push(box(W - lw - 1, H / 2 - hw, zc - hh, W + 1, H / 2 + hw, zc + hh));
-        else if (p.usb === 'bottom') {
-          const xc = W - L.usbX; // v čelním pohledu vlevo dole od středu
-          lcuts.push(box(xc - hw, -1, zc - hh, xc + hw, lw + 1, zc + hh));
-        }
+        lcuts.push(L.usb.side ? boxF(L.usb.bb, zc - p.usbH / 2, zc + p.usbH / 2) : boxF(L.usb.bb, z1 - p.lidPlate - 1, z1 + 1));
       }
       // otvory na zavěšení (klíčová dírka)
       for (const kh of L.keyholes || []) {
@@ -681,7 +763,7 @@ export function buildModels(M, L, opts = {}) {
           const d = T(diffM.intersect(box(a[0], a[1], -1, b[0], b[1], p.front + 1)));
           if (!d.isEmpty()) out.diffuser = meshOut(d);
         }
-        if (lidM) out.lid = meshOut(pieceOf(lidM, lidCutsU, q, 'lid', z0 - 1, z1 + 1));
+        if (lidM) out.lid = meshOut(pieceOf(lidM, lidCutsU, q, 'lid', z0 - peg - 1, z1 + 1));
         return out;
       });
     }
