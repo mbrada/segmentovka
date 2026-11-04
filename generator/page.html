@@ -188,6 +188,11 @@ pre { margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 1
 .fp-seg { fill: var(--led); }
 .fp-num { fill: var(--led-ink); font-family: var(--font-mono); font-weight: 600; }
 .fp-cap { fill: var(--muted); font-family: var(--font-ui); }
+.fp-sym { fill: none; stroke: var(--led); stroke-linecap: round; stroke-linejoin: round; }
+.fp-win { fill: none; stroke: var(--led); stroke-width: 0.35; stroke-dasharray: 1 1; opacity: 0.55; }
+.fp-num-sym { fill: var(--display-fg); font-family: var(--font-mono); font-weight: 600; }
+.chips-label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); align-self: center; margin-right: 4px; }
+.note-row { grid-template-columns: minmax(0, 1fr); }
 </style>
 <script type="importmap">
 { "imports": {
@@ -205,10 +210,11 @@ pre { margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 1
     <div class="layout-box">
       <label for="p-layout">Rozložení displeje</label>
       <div class="layout-row">
-        <input id="p-layout" type="text" autocomplete="off" spellcheck="false" maxlength="24" aria-describedby="layout-legend">
+        <input id="p-layout" type="text" autocomplete="off" spellcheck="false" maxlength="60" aria-describedby="layout-legend">
       </div>
       <div class="presets" id="presets" aria-label="Předvolby rozložení"></div>
-      <p class="legend" id="layout-legend"><code>8</code> číslice · <code>1</code> úzká jednička · <code>-</code> mínus · <code>:</code> dvojtečka · <code>.</code> desetinná tečka · <code>°</code> stupeň · mezera</p>
+      <div class="presets" id="symbols" aria-label="Vložit symbol"><span class="chips-label">Vložit symbol</span></div>
+      <p class="legend" id="layout-legend"><code>8</code> číslice · <code>1</code> úzká jednička · <code>-</code> mínus · <code>:</code> dvojtečka · <code>.</code> desetinná tečka · <code>°</code> stupeň · <code>[cm]</code> symbol za jednou LED · mezera</p>
     </div>
   </header>
 
@@ -274,11 +280,13 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import { DEFAULTS, computeLayout, lidToPrint, ledMap } from './gen.js';
+import { SYMBOL_PRESETS } from './symbols.js';
 import { stl, threeMF, zip } from './export.js';
 
 const PRESETS = [
   ['88:88', 'hodiny'], ['88:88:88', 'hodiny se sekundami'], ['-8:8:8', 'odpočet'], ['88.88', 'desetinné číslo'],
-  ['188', 'do 199'], ['-88°', 'teploměr'], ['-88.8°', 'teploměr s desetinami'], ['8888', 'počítadlo'],
+  ['188', 'do 199'], ['-88°', 'teploměr'], ['-88.8°', 'teploměr s desetinami'], ['-88.8[°C]', 'teploměr se symbolem °C'],
+  ['888[cm]', 'vzdálenost v cm'], ['8888', 'počítadlo'],
 ];
 
 const STYLES = [
@@ -335,8 +343,15 @@ const GROUPS = [
     ['recessDepth', 'Hloubka vybrání v čele', 'mm', 0, 3, 0.1],
     ['recessInset', 'Osazení pod difuzorem', 'mm', 0, 3, 0.1],
     ['diffuser', 'Generovat difuzory', 'bool'],
-    ['diffClear', 'Vůle difuzoru', 'mm', 0, 1, 0.05, '0 pro tisk v pouzdře s AMS'],
+    ['diffClear', 'Vůle difuzoru', 'mm', 0, 1, 0.05, '0 pro tisk v pouzdře s AMS; u symbolů pak přibude destička za maskou'],
     ['diffT', 'Tloušťka difuzoru', 'mm', 0.2, 3, 0.1],
+  ] },
+  { id: 'sym', title: 'Symboly', items: [
+    ['symNote', 'Symbol zapíšete do rozložení v hranatých závorkách, např. 88.8[cm]. V čele je maska s vyříznutým písmem, které svítí jedna LED přes společný světlovod. Kroužky u ° a % a příčka u A mají šablonové přerušení, aby z masky nic nevypadlo.', 'note'],
+    ['symH', 'Výška písma', 'mm', 5, 60, 0.5, 'výška velkých písmen'],
+    ['symStroke', 'Tloušťka tahu', 'mm', 0.8, 5, 0.1, 'šířka průřezu v masce'],
+    ['symPos', 'Svislá poloha', 'select', [['auto', 'podle symbolu'], ['bottom', 'dole'], ['middle', 'uprostřed'], ['top', 'nahoře']]],
+    ['symPad', 'Okraj kolem symbolu', 'mm', 0, 20, 0.5],
   ] },
   { id: 'lid', title: 'Zadní krabička', items: [
     ['lid', 'Generovat krabičku', 'bool'],
@@ -405,6 +420,13 @@ function buildParamsUI() {
       const id = `p-${key}`;
       let help = '';
       let ctl = '';
+      if (kind === 'note') {
+        delete row.dataset.key;
+        row.className = 'row note-row';
+        row.innerHTML = `<p class="note">${label}</p>`;
+        rows.append(row);
+        continue;
+      }
       if (kind === 'styles') {
         row.classList.add('styles-row');
         row.innerHTML = `<span class="styles-label" id="${id}-label">${label}</span>
@@ -516,6 +538,30 @@ function buildPresets() {
     b.title = title;
     b.setAttribute('aria-pressed', 'false');
     b.addEventListener('click', () => { params.layout = lay; $('#p-layout').value = lay; changed(); });
+    box.append(b);
+  }
+}
+// Symboly se vkládají na místo kurzoru v poli rozložení (bez kurzoru na konec).
+let caret = null;
+function buildSymbols() {
+  const box = $('#symbols');
+  const inp = $('#p-layout');
+  const remember = () => { caret = inp.selectionEnd; };
+  for (const ev of ['keyup', 'click', 'select', 'input']) inp.addEventListener(ev, remember);
+  for (const sym of SYMBOL_PRESETS) {
+    const b = document.createElement('button');
+    b.className = 'chip';
+    b.type = 'button';
+    b.textContent = sym;
+    b.title = `Vložit [${sym}]`;
+    b.addEventListener('click', () => {
+      const v = inp.value, at = caret == null || caret > v.length ? v.length : caret;
+      const ins = `[${sym}]`;
+      inp.value = v.slice(0, at) + ins + v.slice(at);
+      caret = at + ins.length;
+      params.layout = inp.value;
+      changed();
+    });
     box.append(b);
   }
 }
@@ -711,9 +757,22 @@ function renderFront() {
     s += `<circle cx="${e.c[0]}" cy="${Y(e.c[1])}" r="${L.rOut}" class="fp-sock"/>`;
   }
   for (const e of L.els) {
-    s += `<polygon points="${pts(e.poly)}" class="fp-seg"><title>LED ${e.led}: pozice ${e.glyph + 1}, ${e.kind === 'seg' ? 'segment ' + e.name : e.name}</title></polygon>`;
+    const tip = `<title>LED ${e.led}: pozice ${e.glyph + 1}, ${e.kind === 'seg' ? 'segment ' + e.name : e.kind === 'sym' ? 'symbol ' + e.name : e.name}</title>`;
+    if (e.kind === 'sym') {
+      s += `<g>${tip}<polygon points="${pts(e.poly)}" class="fp-win"/>`;
+      for (const pl of e.lines) s += `<polyline points="${pts(pl)}" class="fp-sym" stroke-width="${p.symStroke}"/>`;
+      s += '</g>';
+    } else {
+      s += `<polygon points="${pts(e.poly)}" class="fp-seg">${tip}</polygon>`;
+    }
   }
   for (const e of L.els) {
+    if (e.kind === 'sym') {
+      // číslo nad symbolem, aby nepřekrylo písmo
+      const top = Math.max(...e.poly.map(([, y]) => y));
+      s += `<text x="${e.c[0]}" y="${Y(top) - 2.2}" font-size="${Math.min(fs, 5)}" text-anchor="middle" class="fp-num-sym">${e.led}</text>`;
+      continue;
+    }
     s += `<text x="${e.c[0]}" y="${Y(e.c[1])}" font-size="${fs}" text-anchor="middle" dominant-baseline="central" class="fp-num">${e.led}</text>`;
   }
   s += `<text x="${W / 2}" y="${H + 9}" font-size="5" text-anchor="middle" class="fp-cap">${fmt(W)} × ${fmt(H)} mm · pohled zepředu · čísla = pořadí LED v řetězu · čárkovaně lůžka a sloupky</text>`;
@@ -890,6 +949,7 @@ new MutationObserver(() => viewer.applyTheme()).observe(document.documentElement
 
 // ---------- start ----------
 buildPresets();
+buildSymbols();
 buildParamsUI();
 $('#p-layout').addEventListener('input', (e) => { params.layout = e.target.value; changed(); });
 syncInputs();

@@ -9,6 +9,8 @@ Běží na https://segmentovka.miloslavbrada.cz
 - styly segmentů: hroty 45° (originál), šikmé rohy (klasický LED), zaoblené, rovné (blokové)
 - rozložení libovolným řetězcem: `8` číslice, `1` úzká jednička, `-` mínus, `:` dvojtečka,
   `.` desetinná tečka, `°` stupeň, mezera
+- symboly v hranatých závorkách, např. `88.8[cm]`, `-88.8[°C]`: v čele maska s vyříznutým
+  šablonovým písmem, svítí ji jedna LED přes společný světlovod (písmo v `symbols.js`)
 - výstupy: pouzdro (tisk čelem dolů), difuzory do 1mm vybrání, zadní krabička se sloupky,
   otvorem pro kabel a otvory na zavěšení; 3MF má pouzdro a difuzory jako dva díly jednoho
   objektu (tisk s AMS), mapa LED pro firmware
@@ -16,6 +18,7 @@ Běží na https://segmentovka.miloslavbrada.cz
 ## Soubory
 
 - `gen.js` – rozložení a 3D geometrie (CSG přes manifold-3d), sdílené prohlížečem i Node
+- `symbols.js` – šablonové písmo symbolů (tahy, bez ostrůvků)
 - `export.js` – binární STL, 3MF, ZIP (deflate přes CompressionStream)
 - `worker.js` – výpočet ve Web Workeru
 - `page.html` – stránka (obsah ve tvaru pro Claude Artifact, bez `<head>`)

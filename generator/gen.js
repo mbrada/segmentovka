@@ -7,11 +7,15 @@
 //
 // Výchozí hodnoty odpovídají původnímu Case.3mf (7-Segment Uhr v38, 88:88).
 
+import { layoutSymbol, strokePolygons, convexHull } from './symbols.js';
+
 export const DEFAULTS = {
   layout: '88:88',
   // číslice
   digitW: 40, digitH: 90, segW: 10, gap: 3.54, slant: 0, segStyle: 'pointed',
   digitGap: 5, colonW: 20, dpW: 12, dotSize: 10, dotShape: 'diamond',
+  // symboly [cm], [°C]…: maska v čele, jedna LED
+  symH: 16, symStroke: 2, symPos: 'auto', symPad: 2,
   // pouzdro
   margin: 8, wall: 3, front: 3, depth: 45.5, chamfer: 0.5,
   recessDepth: 1, recessInset: 1, tubeWall: 2, tubeEndD: 10,
@@ -32,12 +36,22 @@ export const DEFAULTS = {
 };
 
 const GLYPH_SEGS = { digit: 'abcdefg', one: 'bc', minus: 'g', deg: 'abfg', blank: '' };
-const DIGITLIKE = new Set(['digit', 'one', 'minus', 'deg', 'blank']);
+const DIGITLIKE = new Set(['digit', 'one', 'minus', 'deg', 'blank', 'sym']);
 
 export function parseLayout(str) {
   const glyphs = [];
   const bad = new Set();
-  for (const ch of String(str || '')) {
+  const chars = [...String(str || '')];
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+    if (ch === '[') {
+      const end = chars.indexOf(']', i + 1);
+      if (end < 0) { bad.add('['); continue; }
+      const text = chars.slice(i + 1, end).join('').trim();
+      if (text) glyphs.push({ t: 'sym', ch: text });
+      i = end;
+      continue;
+    }
     let t = null;
     if (/[02-9]/.test(ch)) t = 'digit';
     else if (ch === '1') t = 'one';
@@ -214,13 +228,20 @@ export function computeLayout(params) {
   const warnings = [];
   if (bad.length) warnings.push(`Neznámé znaky v rozložení: ${bad.map((c) => `„${c}“`).join(', ')} (ignoruji je).`);
 
+  const rOut = p.modD / 2 + p.ringWall;
   const cells = [];
   let x = 0;
   glyphs.forEach((g, i) => {
     const prev = glyphs[i - 1];
     if (prev && DIGITLIKE.has(prev.t) && DIGITLIKE.has(g.t)) x += p.digitGap;
-    const cw = g.t === 'one' ? w : g.t === 'colon' ? p.colonW : g.t === 'dp' ? p.dpW : p.digitW;
-    cells.push({ ...g, x0: x, w: cw, idx: i });
+    let cw = g.t === 'one' ? w : g.t === 'colon' ? p.colonW : g.t === 'dp' ? p.dpW : p.digitW;
+    let sym = null;
+    if (g.t === 'sym') {
+      sym = layoutSymbol(g.ch, { height: p.symH, stroke: p.symStroke });
+      if (sym.bad.length) warnings.push(`Symbol [${g.ch}]: znaky ${sym.bad.map((c) => `„${c}“`).join(', ')} písmo nemá (vynechávám je).`);
+      cw = Math.max(sym.width + p.symStroke + 2 * p.symPad, 2 * rOut + 1);
+    }
+    cells.push({ ...g, x0: x, w: cw, idx: i, sym });
     x += cw;
   });
 
@@ -246,6 +267,21 @@ export function computeLayout(params) {
           c: [(s0[0] + s1[0]) / 2, (s0[1] + s1[1]) / 2], u: [ux / ul, uy / ul],
         });
       }
+    } else if (c.t === 'sym') {
+      const sy = c.sym;
+      if (!sy.lines.length) continue;
+      const r = p.symStroke / 2;
+      const pos = p.symPos === 'auto' ? (sy.top ? 'top' : 'bottom') : p.symPos;
+      const dy = pos === 'top' ? H - sy.maxY - r : pos === 'middle' ? H / 2 - (sy.minY + sy.maxY) / 2 : r - sy.minY;
+      const dx = c.x0 + (c.w - sy.width) / 2;
+      const lines = sy.lines.map((pl) => pl.map(([px, py]) => shear([px + dx, py + dy])));
+      const window = convexHull(strokePolygons(lines, p.symStroke, 12).flat());
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (const [px, py] of window) { x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); }
+      els.push({
+        glyph: c.idx, ch: c.ch, name: c.ch, kind: 'sym', poly: window, lines,
+        c: [(x0 + x1) / 2, (y0 + y1) / 2], u: [1, 0],
+      });
     } else {
       const cx = c.x0 + c.w / 2;
       const ys = c.t === 'colon' ? [(H / 2 + H - w / 2) / 2, (w / 2 + H / 2) / 2] : [w / 2];
@@ -276,7 +312,7 @@ export function computeLayout(params) {
   const offX = p.margin - minX, offY = p.margin - minY;
   const caseW = maxX - minX + 2 * p.margin, caseH = maxY - minY + 2 * p.margin;
   const mv = ([px, py]) => [px + offX, py + offY];
-  for (const e of els) { e.poly = e.poly.map(mv); e.c = mv(e.c); }
+  for (const e of els) { e.poly = e.poly.map(mv); e.c = mv(e.c); if (e.lines) e.lines = e.lines.map((pl) => pl.map(mv)); }
   for (const c of cells) { c.cx = c.x0 + c.w / 2 + offX; }
 
   // pořadí LED v řetězu
@@ -292,12 +328,23 @@ export function computeLayout(params) {
   posts.push({ r: [caseW - ps, 0, caseW, ps], h: [caseW - hc, hc] });
   posts.push({ r: [0, caseH - ps, ps, caseH], h: [hc, caseH - hc] });
   posts.push({ r: [caseW - ps, caseH - ps, caseW, caseH], h: [caseW - hc, caseH - hc] });
+  // vnitřní sloupek nesmí zasahovat do lůžka LED ani do světlovodu u čela
+  const rectFree = ([rx0, ry0, rx1, ry1]) => els.every((e) => {
+    const dx = Math.max(0, rx0 - e.c[0], e.c[0] - rx1), dy = Math.max(0, ry0 - e.c[1], e.c[1] - ry1);
+    if (Math.hypot(dx, dy) < rOut + 1) return false;
+    const m = p.tubeWall + 0.5;
+    let ex0 = Infinity, ex1 = -Infinity, ey0 = Infinity, ey1 = -Infinity;
+    for (const [px, py] of e.poly) { ex0 = Math.min(ex0, px); ex1 = Math.max(ex1, px); ey0 = Math.min(ey0, py); ey1 = Math.max(ey1, py); }
+    return rx1 < ex0 - m || rx0 > ex1 + m || ry1 < ey0 - m || ry0 > ey1 + m;
+  });
+  const edgeRects = (xAt) => [hc, caseH - hc].map((hy) => {
+    const hx = xAt(hy), y0 = hy < caseH / 2 ? 0 : caseH - ps;
+    return { r: [hx - mw / 2, y0, hx + mw / 2, y0 + ps], h: [hx, hy] };
+  });
   const edgePosts = (xAt) => {
-    for (const hy of [hc, caseH - hc]) {
-      const hx = xAt(hy);
-      const y0 = hy < caseH / 2 ? 0 : caseH - ps;
-      posts.push({ r: [hx - mw / 2, y0, hx + mw / 2, y0 + ps], h: [hx, hy] });
-    }
+    const rs = edgeRects(xAt);
+    if (rs.every((q) => rectFree(q.r))) { posts.push(...rs); return true; }
+    return false;
   };
   const xAtFor = (xc) => (hy) => xc + (hy - offY - H / 2) * k;
   const colons = cells.filter((c) => c.t === 'colon');
@@ -305,20 +352,19 @@ export function computeLayout(params) {
     for (const c of colons) {
       edgePosts(xAtFor(c.cx));
       const cy = offY + H / 2;
-      posts.push({ r: [c.cx - mw / 2, cy - mw / 2, c.cx + mw / 2, cy + mw / 2], h: [c.cx, cy] });
+      const r = [c.cx - mw / 2, cy - mw / 2, c.cx + mw / 2, cy + mw / 2];
+      if (rectFree(r)) posts.push({ r, h: [c.cx, cy] });
     }
     if (!colons.length && caseW > 150 && cells.length > 1) {
-      let best = null;
-      for (let i = 1; i < cells.length; i++) {
-        const xb = (cells[i - 1].x0 + cells[i - 1].w + cells[i].x0) / 2 + offX;
-        if (!best || Math.abs(xb - caseW / 2) < Math.abs(best - caseW / 2)) best = xb;
-      }
-      edgePosts(xAtFor(best));
+      // hranice mezi buňkami od středu ven; první, kde se sloupky vejdou mimo lůžka
+      const xs = [];
+      for (let i = 1; i < cells.length; i++) xs.push((cells[i - 1].x0 + cells[i - 1].w + cells[i].x0) / 2 + offX);
+      xs.sort((a, b) => Math.abs(a - caseW / 2) - Math.abs(b - caseW / 2));
+      for (const xb of xs) if (edgePosts(xAtFor(xb))) break;
     }
   }
 
   // kontroly
-  const rOut = p.modD / 2 + p.ringWall;
   let minD = Infinity;
   for (let i = 0; i < els.length; i++)
     for (let j = i + 1; j < els.length; j++)
@@ -382,19 +428,32 @@ export function buildModels(M, L, opts = {}) {
 
     const rT = p.tubeEndD / 2, rOut = L.rOut, rTo = rT + p.tubeWall;
     const rIn = p.modD / 2;
+    const maskT = Math.min(Math.max(p.recessDepth, 0.6), p.front - 0.4);
+    // písmo symbolu jako plocha (sjednocené tahy), v souřadnicích modelu
+    const symbolCS = (e) => {
+      const polys = strokePolygons(e.lines.map((pl) => pl.map(mx)), p.symStroke, 16).map((q) => q.reverse());
+      return T(new M.CrossSection(polys, 'NonZero'));
+    };
     for (const e of L.els) {
       const poly = e.poly.map(mx);
       const c = mx(e.c);
       const u = [-e.u[0], e.u[1]];
-      const inner0 = offsetConvex(poly, -p.recessInset);
-      const outer0 = offsetConvex(poly, -p.recessInset + p.tubeWall);
+      const isSym = e.kind === 'sym';
+      const inner0 = isSym ? poly : offsetConvex(poly, -p.recessInset);
+      const outer0 = offsetConvex(poly, (isSym ? 0 : -p.recessInset) + p.tubeWall);
       // světlovod (vnější plášť) + válec lůžka
       adds.push(hull(ring(outer0, p.front - 0.5), ring(outer0, p.front), ring(circ(c, rTo), z.tubeEnd)));
       adds.push(cyl(c, rOut, rOut, z.tubeEnd - 0.5, z.ringTop));
-      // vybrání pro difuzor
-      if (p.recessDepth > 0) cuts.push(hull(ring(poly, -1), ring(poly, p.recessDepth)));
-      // světlovod (dutina)
-      cuts.push(hull(ring(inner0, -1), ring(inner0, p.front), ring(circ(c, rT), z.tubeEnd)));
+      if (isSym) {
+        // maska: písmo prořízne čelo do hloubky maskT, za ním společné okno a světlovod
+        cuts.push(T(T(symbolCS(e).extrude(maskT + 1)).translate([0, 0, -1])));
+        cuts.push(hull(ring(inner0, maskT - 0.05), ring(inner0, p.front), ring(circ(c, rT), z.tubeEnd)));
+      } else {
+        // vybrání pro difuzor
+        if (p.recessDepth > 0) cuts.push(hull(ring(poly, -1), ring(poly, p.recessDepth)));
+        // světlovod (dutina)
+        cuts.push(hull(ring(inner0, -1), ring(inner0, p.front), ring(circ(c, rT), z.tubeEnd)));
+      }
       // kužel k okénku LED
       const win = rect(c, u, p.windowSize, p.windowSize);
       cuts.push(hull(ring(circ(c, rT), z.tubeEnd - 0.01), ring(win, z.windowBase)));
@@ -422,6 +481,15 @@ export function buildModels(M, L, opts = {}) {
     // --- difuzory ---
     if (p.diffuser && p.recessDepth > 0) {
       const parts = L.els.map((e) => {
+        if (e.kind === 'sym') {
+          // písmena do masky; při tisku na místě (vůle 0) i destička za maskou, která vše drží pohromadě
+          let cs = symbolCS(e);
+          if (p.diffClear > 0) cs = T(cs.offset(-p.diffClear, 'Round', 2, 16));
+          const letters = T(cs.extrude(maskT));
+          if (p.diffClear > 0) return letters;
+          const win = e.poly.map(mx);
+          return T(letters.add(hull(ring(win, maskT - 0.01), ring(win, Math.min(p.front, maskT + p.diffT)))));
+        }
         const poly = offsetConvex(e.poly.map(mx), -p.diffClear);
         return hull(ring(poly, 0), ring(poly, p.diffT));
       });
@@ -515,6 +583,10 @@ export function ledMap(L) {
       lines.push(`  {${row.join(',')} }, // pozice ${c.idx + 1}: „${c.ch}“`);
     }
     lines.push('};');
+  }
+  const syms = L.els.filter((e) => e.kind === 'sym');
+  if (syms.length) {
+    lines.push(`const uint16_t SYMBOL_LED[${syms.length}] = { ${syms.map((d) => d.led).join(', ')} }; // ${syms.map((d) => d.name).join(', ')}`);
   }
   const dots = L.els.filter((e) => e.kind === 'dot');
   if (dots.length) {
