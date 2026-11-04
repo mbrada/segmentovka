@@ -63,7 +63,8 @@ function checkSplit(params) {
 }
 
 for (const layout of ['88:88', '8.8', '-8', '8°', '188', '-88.8°', '88:88:88']) {
-  const row = ['pointed', 'bevel', 'round', 'flat'].map((segStyle) => `${segStyle} ${check({ layout, segStyle })}`);
+  const row = ['pointed', 'bevel', 'round', 'flat', 'lcd'].map((segStyle) => `${segStyle} ${check({ layout, segStyle })}`);
+  row.push(`lcd 1,5 ${check({ layout, segStyle: 'lcd', gap: 1.5 })}`, `lcd 0,8 sklon ${check({ layout, segStyle: 'lcd', gap: 0.8, slant: 8 })}`);
   console.log(layout.padEnd(9), row.join('   '));
 }
 for (const sym of SYMBOL_PRESETS) {

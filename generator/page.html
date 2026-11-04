@@ -144,7 +144,7 @@ h1, h2, h3 { text-wrap: balance; margin: 0; }
 .row input[type="checkbox"] { accent-color: var(--led); width: 17px; height: 17px; justify-self: end; }
 .row.styles-row { grid-template-columns: minmax(0, 1fr); gap: 6px; padding-bottom: 4px; }
 .styles-label { font-size: 14px; }
-.styles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.styles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .style-btn {
   display: grid; justify-items: center; gap: 2px; padding: 8px 4px 6px; cursor: pointer;
   border: 1px solid var(--line); border-radius: 5px; background: var(--bg); line-height: 1.15;
@@ -336,7 +336,7 @@ pre { margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 1
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
-import { DEFAULTS, computeLayout, lidToPrint, ledMap, USB_PORTS, lidScrewLen, postPeg, KEYHOLE } from './gen.js';
+import { DEFAULTS, STYLE_GAP, computeLayout, lidToPrint, ledMap, USB_PORTS, lidScrewLen, postPeg, KEYHOLE } from './gen.js';
 import { SYMBOL_PRESETS, METEO } from './symbols.js';
 import { jointPoint } from './split.js';
 import { stl, threeMF, zip } from './export.js';
@@ -351,6 +351,7 @@ const STYLES = [
   ['pointed', 'Hroty 45°', 'originál'],
   ['bevel', 'Šikmé rohy', 'klasický LED'],
   ['round', 'Zaoblené', 'oblé konce'],
+  ['lcd', 'LCD', 'asymetrické'],
   ['flat', 'Rovné', 'blokové'],
 ];
 
@@ -516,6 +517,10 @@ function buildParamsUI() {
           <div class="styles" role="group" aria-labelledby="${id}-label">${it[3].map(([v, t, sub]) =>
             `<button type="button" class="style-btn" data-style="${v}" aria-pressed="false">${styleThumb(v)}<span>${t}</span><small>${sub}</small></button>`).join('')}</div>`;
         row.querySelectorAll('.style-btn').forEach((b) => b.addEventListener('click', () => {
+          // styl s doporučenou mezerou (LCD má těsné spáry) ji nastaví místo výchozí a zase vrátí
+          const was = STYLE_GAP[params.segStyle], next = STYLE_GAP[b.dataset.style];
+          if (next !== undefined && params.gap === DEFAULTS.gap) params.gap = next;
+          else if (next === undefined && was !== undefined && params.gap === was) params.gap = DEFAULTS.gap;
           params.segStyle = b.dataset.style; syncInputs(); changed();
         }));
         rows.append(row);
@@ -629,7 +634,7 @@ function scaleDigits(f) {
 
 // Malá ukázka „8“ v daném stylu (stejná geometrie jako model).
 function styleThumb(style) {
-  const lay = computeLayout({ ...DEFAULTS, layout: '8', segStyle: style, margin: 2 });
+  const lay = computeLayout({ ...DEFAULTS, layout: '8', segStyle: style, gap: STYLE_GAP[style] ?? DEFAULTS.gap, margin: 2 });
   const H = lay.caseH;
   const polys = lay.els.map((e) => `<polygon points="${e.poly.map(([x, y]) => `${x.toFixed(2)},${(H - y).toFixed(2)}`).join(' ')}"/>`).join('');
   return `<svg viewBox="0 0 ${lay.caseW.toFixed(2)} ${H.toFixed(2)}" aria-hidden="true">${polys}</svg>`;
@@ -1230,7 +1235,7 @@ function renderFacts() {
     ['Tisk', L.split && L.split.n > 1
       ? `<b>${L.split.n}</b> ${dilu(L.split.n)} (${L.split.nx} × ${L.split.ny}), největší ${fmt(Math.max(...L.split.pieces.map((q) => q.r[2] - q.r[0])))} × ${fmt(Math.max(...L.split.pieces.map((q) => q.r[3] - q.r[1])))} mm`
       : `jeden kus, vejde se na plochu ${fmt(p.bedW)} × ${fmt(p.bedH)} mm`],
-    ['Číslice', `${fmt(p.digitW)} × ${fmt(p.digitH)} mm, segment ${fmt(p.segW)} mm, ${((STYLES.find((s) => s[0] === p.segStyle) || STYLES[0])[1]).toLowerCase()}${p.slant ? `, sklon ${fmt(p.slant)}°` : ''}`],
+    ['Číslice', `${fmt(p.digitW)} × ${fmt(p.digitH)} mm, segment ${fmt(p.segW)} mm, ${((n) => (n === n.toUpperCase() ? n : n.toLowerCase()))((STYLES.find((s) => s[0] === p.segStyle) || STYLES[0])[1])}${p.slant ? `, sklon ${fmt(p.slant)}°` : ''}`],
   ];
   $('#facts').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
 }

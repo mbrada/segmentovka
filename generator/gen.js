@@ -191,7 +191,82 @@ function convexOk(poly) {
   return true;
 }
 
-export const SEG_STYLES = ['pointed', 'bevel', 'round', 'flat'];
+export const SEG_STYLES = ['pointed', 'bevel', 'round', 'flat', 'lcd'];
+// doporučená mezera pro styl (tlačítko stylu ji nastaví, je-li mezera výchozí)
+export const STYLE_GAP = { lcd: 1.5 };
+
+// Ořízne konvexní polygon polorovinou: hranice je přímka bodem P ve směru d (jednotkový vektor),
+// zůstane strana s bodem ref a hranice se k ref posune o off.
+function clipHalf(poly, P, d, off, ref) {
+  const nx = -d[1], ny = d[0];
+  const side = (q) => (q[0] - P[0]) * nx + (q[1] - P[1]) * ny;
+  const sg = side(ref) < 0 ? -1 : 1;
+  const f = (q) => sg * side(q) - off;
+  const out = [];
+  for (let i = 0; i < poly.length; i++) {
+    const A = poly[i], B = poly[(i + 1) % poly.length];
+    const fa = f(A), fb = f(B);
+    if (fa >= 0) out.push(A);
+    if ((fa >= 0) !== (fb >= 0)) {
+      const t = fa / (fa - fb);
+      out.push([A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t]);
+    }
+  }
+  return out.filter((q, i) => Math.hypot(q[0] - out[(i + 1) % out.length][0], q[1] - out[(i + 1) % out.length][1]) > 1e-6);
+}
+
+// Ořez obdélníkem se zaoblenými rohy o poloměru r (vnější rohy číslice).
+function clipRoundBox(poly, x0, y0, x1, y1, r) {
+  const pts = [];
+  for (const [cx, cy, a0] of [[x1 - r, y0 + r, -90], [x1 - r, y1 - r, 0], [x0 + r, y1 - r, 90], [x0 + r, y0 + r, 180]])
+    for (let i = 0; i <= 6; i++) { const a = ((a0 + 15 * i) * Math.PI) / 180; pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]); }
+  const ref = [(x0 + x1) / 2, (y0 + y1) / 2];
+  for (let i = 0; i < pts.length; i++) {
+    const A = pts[i], B = pts[(i + 1) % pts.length], L = Math.hypot(B[0] - A[0], B[1] - A[1]);
+    if (L > 1e-9) poly = clipHalf(poly, A, [(B[0] - A[0]) / L, (B[1] - A[1]) / L], 0, ref);
+  }
+  return poly;
+}
+
+// LCD (asymetrický, inspirovaný DSEG7 Modern): každý spoj je jedna šikmá spára pod 30° nebo 60°.
+// Vnější roh patří vždy jednomu segmentu – vlevo nahoře a vpravo dole vodorovnému, vpravo nahoře
+// a vlevo dole svislému – a je zaoblený. Uprostřed je g kosodélník s hroty, f a c mají šikmou
+// špičku. Jednotlivé segmenty nejsou souměrné, celá číslice je souměrná otočením o 180°.
+const SHALLOW = [Math.cos(Math.PI / 6), -0.5]; // „\“ 30° pod vodorovnou
+const STEEP = [0.5, Math.cos(Math.PI / 6)]; // „/“ 60°
+function lcdSegment(s, k) {
+  const { xl, xr, yb, ym, yt, h, g } = k;
+  const X0 = xl - h, X1 = xr + h, Y0 = yb - h, Y1 = yt + h;
+  const rect = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+  // spáry: přímka bodem P ve směru d; o = posun hranice pro každý dotčený segment (0 nebo celá mezera)
+  const joints = [
+    { P: [xl + h, yt - h], d: SHALLOW, o: { f: 0, a: g } }, // vlevo nahoře, roh patří a
+    { P: [xr - h, yt - h], d: STEEP, o: { a: 0, b: g } }, // vpravo nahoře, roh patří b
+    { P: [xr - h, yb + h], d: SHALLOW, o: { c: 0, d: g } }, // vpravo dole, roh patří d
+    { P: [xl + h, yb + h], d: STEEP, o: { d: 0, e: g } }, // vlevo dole, roh patří e
+    { P: [xl + h, ym - h], d: SHALLOW, o: { f: 0, g: 0, e: g } }, // vlevo uprostřed
+    { P: [xl + h, ym + h], d: STEEP, o: { f: 0, g } },
+    { P: [xr - h, ym + h], d: SHALLOW, o: { c: 0, g: 0, b: g } }, // vpravo uprostřed
+    { P: [xr - h, ym - h], d: STEEP, o: { c: 0, g } },
+  ];
+  const R = {
+    a: rect(X0, yt - h, X1, Y1), d: rect(X0, Y0, X1, yb + h), g: rect(X0, ym - h, X1, ym + h),
+    f: rect(X0, yb + h, xl + h, Y1), e: rect(X0, Y0, xl + h, yt - h),
+    b: rect(xr - h, yb + h, X1, Y1), c: rect(xr - h, Y0, X1, yt - h),
+  };
+  const xc = (xl + xr) / 2;
+  const ref = { a: [xc, yt], d: [xc, yb], g: [xc, ym], f: [xl, (ym + yt) / 2], e: [xl, (yb + ym) / 2], b: [xr, (ym + yt) / 2], c: [xr, (yb + ym) / 2] };
+  let poly = R[s];
+  for (const j of joints) if (s in j.o) poly = clipHalf(poly, j.P, j.d, j.o[s], ref[s]);
+  poly = clipRoundBox(poly, X0, Y0, X1, Y1, 0.8 * h);
+  if (poly.length < 3) return { poly, p0: ref[s], p1: ref[s] };
+  const xs = poly.map((q) => q[0]), ys = poly.map((q) => q[1]);
+  const horiz = s === 'a' || s === 'd' || s === 'g';
+  const [p0, p1] = horiz
+    ? [[Math.min(...xs), ref[s][1]], [Math.max(...xs), ref[s][1]]]
+    : [[ref[s][0], Math.min(...ys)], [ref[s][0], Math.max(...ys)]];
+  return { poly, p0, p1 };
+}
 
 // Tvar segmentu s ∈ a..g v daném stylu. k: osy číslice (xl, xr svislé, yb, ym, yt vodorovné),
 // polovina tloušťky h a mezera g = nejmenší vzdálenost sousedních segmentů.
@@ -215,6 +290,8 @@ function segmentShape(style, s, k) {
       : upper ? [[xs, ym + ev], [xs, yt - ev]] : [[xs, yb + ev], [xs, ym - ev]];
     return { poly: barSeg(p0, p1, w, style === 'round'), p0, p1 };
   }
+
+  if (style === 'lcd') return lcdSegment(s, k);
 
   if (style === 'bevel' && s !== 'g') {
     // vnější rohy dělí šikmá spára pod 45°, u prostředního segmentu zůstávají hroty
@@ -356,6 +433,8 @@ export function computeLayout(params) {
     }
   }
 
+  if (p.gap < 0.8 && els.some((e) => e.kind === 'seg'))
+    warnings.push(`Mezera mezi segmenty ${String(Math.round(p.gap * 100) / 100).replace('.', ',')} mm je tenčí než 0,8 mm – přepážka mezi difuzory v čele se tryskou 0,4 mm nemusí vytisknout.`);
   if (tooShort) warnings.push('Některé segmenty se do číslice nevejdou – zvětšete číslici, nebo zmenšete tloušťku segmentu či mezeru.');
 
   // ohraničení obsahu: všechny tvary + rohy buněk (kvůli mezerám na krajích)

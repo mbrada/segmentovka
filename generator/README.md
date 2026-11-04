@@ -7,6 +7,8 @@ výchozí parametry ho reprodukují (objem 258,7 vs. 259,6 cm³, řezy se shoduj
 Běží na https://segmentovka.miloslavbrada.cz
 
 - styly segmentů: hroty 45° (originál), šikmé rohy (klasický LED), zaoblené, rovné (blokové)
+  a LCD – asymetrické segmenty jako DSEG7 Modern: spáry pod 30°/60°, každý vnější roh patří
+  jednomu segmentu a je zaoblený; tlačítko stylu nastaví těsnou mezeru 1,5 mm
 - rozložení libovolným řetězcem: `8` číslice, `1` úzká jednička, `-` mínus, `:` dvojtečka,
   `.` desetinná tečka, `°` stupeň, mezera
 - symboly v hranatých závorkách, např. `88.8[cm]`, `-88.8[°C]`: v čele maska s vyříznutým
