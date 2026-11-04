@@ -18,6 +18,8 @@
   --view: #dbe0dc;
   --display: #0d0f0e;
   --display-ink: #ff5b37;
+  --display-fg: #f2f3f1;
+  --display-muted: #a9b0ac;
   --warn-bg: #f9e8c8;
   --warn-ink: #5e3b00;
   --focus: #1d6fd6;
@@ -140,6 +142,20 @@ h1, h2, h3 { text-wrap: balance; margin: 0; }
 .row select, .row input[type="text"] { border: 1px solid var(--line); border-radius: 5px; background: var(--bg); padding: 4px 6px; max-width: 11em; }
 .row input[type="text"] { font-family: var(--font-mono); width: 8.5em; }
 .row input[type="checkbox"] { accent-color: var(--led); width: 17px; height: 17px; justify-self: end; }
+.row.styles-row { grid-template-columns: minmax(0, 1fr); gap: 6px; padding-bottom: 4px; }
+.styles-label { font-size: 14px; }
+.styles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.style-btn {
+  display: grid; justify-items: center; gap: 2px; padding: 8px 4px 6px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 5px; background: var(--bg); line-height: 1.15;
+}
+.style-btn svg { width: 100%; height: 50px; fill: var(--muted); opacity: 0.75; margin-bottom: 4px; }
+.style-btn span { font-size: 12.5px; font-weight: 600; }
+.style-btn small { font-size: 11px; color: var(--muted); }
+.style-btn:hover { border-color: var(--muted); }
+.style-btn[aria-pressed="true"] { border-color: var(--led); background: var(--display); color: var(--display-fg); }
+.style-btn[aria-pressed="true"] svg { fill: var(--display-ink); opacity: 1; }
+.style-btn[aria-pressed="true"] small { color: var(--display-muted); }
 .note { font-size: 13px; color: var(--muted); margin: 2px 0 0; }
 .params-foot { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--line); }
 
@@ -262,16 +278,24 @@ import { stl, threeMF, zip } from './export.js';
 
 const PRESETS = [
   ['88:88', 'hodiny'], ['88:88:88', 'hodiny se sekundami'], ['-8:8:8', 'odpočet'], ['88.88', 'desetinné číslo'],
-  ['188', 'do 199'], ['-88°', 'teploměr'], ['8888', 'počítadlo'],
+  ['188', 'do 199'], ['-88°', 'teploměr'], ['-88.8°', 'teploměr s desetinami'], ['8888', 'počítadlo'],
+];
+
+const STYLES = [
+  ['pointed', 'Hroty 45°', 'originál'],
+  ['bevel', 'Šikmé rohy', 'klasický LED'],
+  ['round', 'Zaoblené', 'oblé konce'],
+  ['flat', 'Rovné', 'blokové'],
 ];
 
 // [klíč, popis, jednotka | typ, min, max, krok, nápověda]
 const GROUPS = [
   { id: 'digits', title: 'Číslice', open: true, items: [
+    ['segStyle', 'Styl segmentů', 'styles', STYLES],
     ['digitH', 'Výška číslice', 'mm', 10, 400, 0.5],
     ['digitW', 'Šířka číslice', 'mm', 5, 300, 0.5],
     ['segW', 'Tloušťka segmentu', 'mm', 2, 40, 0.5],
-    ['gap', 'Mezera mezi segmenty', 'mm', 0, 10, 0.01, 'kolmo mezi šikmými konci'],
+    ['gap', 'Mezera mezi segmenty', 'mm', 0, 10, 0.01, 'nejmenší vzdálenost sousedních segmentů'],
     ['slant', 'Sklon číslic', '°', -20, 20, 0.5, 'kladný naklání doprava'],
     ['digitGap', 'Mezera mezi číslicemi', 'mm', 0, 60, 0.5],
     ['colonW', 'Šířka pole dvojtečky', 'mm', 5, 80, 0.5],
@@ -381,6 +405,17 @@ function buildParamsUI() {
       const id = `p-${key}`;
       let help = '';
       let ctl = '';
+      if (kind === 'styles') {
+        row.classList.add('styles-row');
+        row.innerHTML = `<span class="styles-label" id="${id}-label">${label}</span>
+          <div class="styles" role="group" aria-labelledby="${id}-label">${it[3].map(([v, t, sub]) =>
+            `<button type="button" class="style-btn" data-style="${v}" aria-pressed="false">${styleThumb(v)}<span>${t}</span><small>${sub}</small></button>`).join('')}</div>`;
+        row.querySelectorAll('.style-btn').forEach((b) => b.addEventListener('click', () => {
+          params.segStyle = b.dataset.style; syncInputs(); changed();
+        }));
+        rows.append(row);
+        continue;
+      }
       if (kind === 'select') {
         ctl = `<select id="${id}">${it[3].map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select>`;
       } else if (kind === 'bool') {
@@ -445,8 +480,17 @@ function syncInputs() {
     if (el.type === 'checkbox') el.checked = !!params[k];
     else if (document.activeElement !== el) el.value = params[k];
   }
+  for (const b of document.querySelectorAll('.style-btn')) b.setAttribute('aria-pressed', String(b.dataset.style === params.segStyle));
   markChanged();
   markPresets();
+}
+
+// Malá ukázka „8“ v daném stylu (stejná geometrie jako model).
+function styleThumb(style) {
+  const lay = computeLayout({ ...DEFAULTS, layout: '8', segStyle: style, margin: 2 });
+  const H = lay.caseH;
+  const polys = lay.els.map((e) => `<polygon points="${e.poly.map(([x, y]) => `${x.toFixed(2)},${(H - y).toFixed(2)}`).join(' ')}"/>`).join('');
+  return `<svg viewBox="0 0 ${lay.caseW.toFixed(2)} ${H.toFixed(2)}" aria-hidden="true">${polys}</svg>`;
 }
 
 function markChanged() {
@@ -687,7 +731,7 @@ function renderFacts() {
     ['Moduly LED', `<b>${n}</b> × WS2812B, kulatá deska ⌀ 10 mm`],
     ['Napájení', `5 V, až <b>${fmt(amps, 2)}</b> A při plném bílém jasu`],
     ['Šrouby', `<b>${L.posts.length}</b> × M3 × 12–16 mm`],
-    ['Číslice', `${fmt(p.digitW)} × ${fmt(p.digitH)} mm, segment ${fmt(p.segW)} mm${p.slant ? `, sklon ${fmt(p.slant)}°` : ''}`],
+    ['Číslice', `${fmt(p.digitW)} × ${fmt(p.digitH)} mm, segment ${fmt(p.segW)} mm, ${((STYLES.find((s) => s[0] === p.segStyle) || STYLES[0])[1]).toLowerCase()}${p.slant ? `, sklon ${fmt(p.slant)}°` : ''}`],
   ];
   $('#facts').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
 }

@@ -6,6 +6,7 @@ výchozí parametry ho reprodukují (objem 258,7 vs. 259,6 cm³, řezy se shoduj
 
 Běží na https://segmentovka.miloslavbrada.cz
 
+- styly segmentů: hroty 45° (originál), šikmé rohy (klasický LED), zaoblené, rovné (blokové)
 - rozložení libovolným řetězcem: `8` číslice, `1` úzká jednička, `-` mínus, `:` dvojtečka,
   `.` desetinná tečka, `°` stupeň, mezera
 - výstupy: pouzdro (tisk čelem dolů), difuzory do 1mm vybrání, zadní krabička se sloupky,
@@ -32,3 +33,4 @@ ES moduly a WASM potřebují HTTP, z `file://` stránka nepoběží.
 
     node test/build.mjs /tmp/out '{"layout":"-8:8:8","slant":8}'   # STL + statistika (manifold, objem)
     node test/export.mjs /tmp/out                                  # ZIP a 3MF
+    node test/genus.mjs                                            # světlovody průchozí ve všech stylech

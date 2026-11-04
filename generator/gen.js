@@ -10,7 +10,7 @@
 export const DEFAULTS = {
   layout: '88:88',
   // číslice
-  digitW: 40, digitH: 90, segW: 10, gap: 3.54, slant: 0,
+  digitW: 40, digitH: 90, segW: 10, gap: 3.54, slant: 0, segStyle: 'pointed',
   digitGap: 5, colonW: 20, dpW: 12, dotSize: 10, dotShape: 'diamond',
   // pouzdro
   margin: 8, wall: 3, front: 3, depth: 45.5, chamfer: 0.5,
@@ -101,6 +101,92 @@ function hexSeg(p0, p1, w) {
   ];
 }
 
+// Obdélník (rovné konce) nebo „stadion“ (půlkruhové konce) mezi koncovými body p0, p1.
+function barSeg(p0, p1, w, round, n = 12) {
+  const dx = p1[0] - p0[0], dy = p1[1] - p0[1], len = Math.hypot(dx, dy);
+  const ux = dx / len, uy = dy / len, nx = -uy, ny = ux, h = w / 2;
+  if (!round) {
+    return [
+      [p0[0] - nx * h, p0[1] - ny * h], [p1[0] - nx * h, p1[1] - ny * h],
+      [p1[0] + nx * h, p1[1] + ny * h], [p0[0] + nx * h, p0[1] + ny * h],
+    ];
+  }
+  const r = Math.min(h, len / 2);
+  const c0 = [p0[0] + ux * r, p0[1] + uy * r], c1 = [p1[0] - ux * r, p1[1] - uy * r];
+  const a0 = Math.atan2(uy, ux);
+  const pts = [];
+  for (let i = 0; i <= n; i++) {
+    const a = a0 - Math.PI / 2 + (Math.PI * i) / n;
+    pts.push([c1[0] + r * Math.cos(a), c1[1] + r * Math.sin(a)]);
+  }
+  for (let i = 0; i <= n; i++) {
+    const a = a0 + Math.PI / 2 + (Math.PI * i) / n;
+    pts.push([c0[0] + r * Math.cos(a), c0[1] + r * Math.sin(a)]);
+  }
+  return pts;
+}
+
+// Je polygon konvexní a nedegenerovaný? (kontrola, zda se segment do číslice vejde)
+function convexOk(poly) {
+  if (Math.abs(area(poly)) < 1) return false;
+  let sign = 0;
+  for (let i = 0; i < poly.length; i++) {
+    const [ax, ay] = poly[i], [bx, by] = poly[(i + 1) % poly.length], [cx, cy] = poly[(i + 2) % poly.length];
+    const cr = (bx - ax) * (cy - by) - (by - ay) * (cx - bx);
+    if (Math.abs(cr) < 1e-9) continue;
+    if (sign === 0) sign = Math.sign(cr);
+    else if (Math.sign(cr) !== sign) return false;
+  }
+  return true;
+}
+
+export const SEG_STYLES = ['pointed', 'bevel', 'round', 'flat'];
+
+// Tvar segmentu s ∈ a..g v daném stylu. k: osy číslice (xl, xr svislé, yb, ym, yt vodorovné),
+// polovina tloušťky h a mezera g = nejmenší vzdálenost sousedních segmentů.
+// Vrací { poly, p0, p1 } – p0, p1 jsou konce segmentu na jeho ose (pro střed a směr lůžka).
+function segmentShape(style, s, k) {
+  const { xl, xr, yb, ym, yt, h, g } = k;
+  const w = 2 * h, sq = g / Math.SQRT2, sv = g * Math.SQRT2;
+  const horiz = s === 'a' || s === 'd' || s === 'g';
+  const xs = s === 'b' || s === 'c' ? xr : xl;
+  const upper = s === 'b' || s === 'f';
+  const mirror = (poly) => poly.map(([x, y]) => [xl + xr - x, y]);
+
+  if (style === 'flat' || style === 'round') {
+    // rovné: vodorovné pruhy přes celou šířku včetně rohů, svislé mezi nimi s mezerou g;
+    // zaoblené: konce posunuté tak, aby oblouky sousedů dělila mezera g
+    const yh = { a: yt, d: yb, g: ym }[s];
+    const eh = style === 'flat' ? -h : (g + w) / Math.SQRT2 - h;
+    const ev = style === 'flat' ? h + g : eh;
+    const [p0, p1] = horiz
+      ? [[xl + eh, yh], [xr - eh, yh]]
+      : upper ? [[xs, ym + ev], [xs, yt - ev]] : [[xs, yb + ev], [xs, ym - ev]];
+    return { poly: barSeg(p0, p1, w, style === 'round'), p0, p1 };
+  }
+
+  if (style === 'bevel' && s !== 'g') {
+    // vnější rohy dělí šikmá spára pod 45°, u prostředního segmentu zůstávají hroty
+    if (s === 'a') return { poly: [[xl - h + sq, yt + h], [xr + h - sq, yt + h], [xr - h - sq, yt - h], [xl + h + sq, yt - h]], p0: [xl + sq, yt], p1: [xr - sq, yt] };
+    if (s === 'd') return { poly: [[xl - h + sq, yb - h], [xl + h + sq, yb + h], [xr - h - sq, yb + h], [xr + h - sq, yb - h]], p0: [xl + sq, yb], p1: [xr - sq, yb] };
+    const f = [[xl - h, ym + sv + h], [xl, ym + sv], [xl + h, ym + sv + h], [xl + h, yt - h - sq], [xl - h, yt + h - sq]];
+    const e = [[xl - h, yb - h + sq], [xl + h, yb + h + sq], [xl + h, ym - sv - h], [xl, ym - sv], [xl - h, ym - sv - h]];
+    const poly = upper ? f : e;
+    const ends = upper ? [[xl, ym + sv], [xl, yt - sq]] : [[xl, yb + sq], [xl, ym - sv]];
+    if (s === 'b' || s === 'c') return { poly: mirror(poly), p0: [xr, ends[0][1]], p1: [xr, ends[1][1]] };
+    return { poly, p0: ends[0], p1: ends[1] };
+  }
+
+  // hroty 45° (původní tvar): vodorovné sahají až do os, svislé se zkracují o g·√2
+  const def = {
+    a: [[xl, yt], [xr, yt]], d: [[xl, yb], [xr, yb]], g: [[xl, ym], [xr, ym]],
+    b: [[xr, ym + sv], [xr, yt - sv]], c: [[xr, yb + sv], [xr, ym - sv]],
+    e: [[xl, yb + sv], [xl, ym - sv]], f: [[xl, ym + sv], [xl, yt - sv]],
+  };
+  const [p0, p1] = def[s];
+  return { poly: hexSeg(p0, p1, w), p0, p1 };
+}
+
 function circlePts(cx, cy, r, n) {
   const pts = [];
   for (let i = 0; i < n; i++) {
@@ -139,30 +225,20 @@ export function computeLayout(params) {
   });
 
   const els = [];
-  const sv = Math.max(0, p.gap * Math.SQRT2);
   const nCirc = 24;
+  const style = SEG_STYLES.includes(p.segStyle) ? p.segStyle : 'pointed';
+  let tooShort = false;
   for (const c of cells) {
     if (c.t in GLYPH_SEGS) {
       const segs = GLYPH_SEGS[c.t];
       const W = c.w;
-      const xl = c.x0 + w / 2, xr = c.x0 + W - w / 2;
-      const yb = w / 2, ym = H / 2, yt = H - w / 2;
-      const def = {
-        a: [[xl, yt], [xr, yt]],
-        b: [[xr, ym + sv], [xr, yt - sv]],
-        c: [[xr, yb + sv], [xr, ym - sv]],
-        d: [[xl, yb], [xr, yb]],
-        e: [[xl, yb + sv], [xl, ym - sv]],
-        f: [[xl, ym + sv], [xl, yt - sv]],
-        g: [[xl, ym], [xr, ym]],
-      };
+      const sk = { xl: c.x0 + w / 2, xr: c.x0 + W - w / 2, yb: w / 2, ym: H / 2, yt: H - w / 2, h: w / 2, g: Math.max(0, p.gap) };
       for (const s of segs) {
-        let [p0, p1] = def[s];
-        if (Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) < 0.5) {
-          warnings.push('Segmenty jsou příliš krátké – zvětšete číslici nebo zmenšete mezeru.');
-          continue;
-        }
-        const poly = hexSeg(p0, p1, w).map(shear);
+        const sh = segmentShape(style, s, sk);
+        const p0 = sh.p0, p1 = sh.p1;
+        const len = (p1[0] - p0[0]) * (s === 'a' || s === 'd' || s === 'g' ? 1 : 0) + (p1[1] - p0[1]) * (s === 'a' || s === 'd' || s === 'g' ? 0 : 1);
+        if (len < 0.5 || !convexOk(sh.poly)) { tooShort = true; continue; }
+        const poly = sh.poly.map(shear);
         const s0 = shear(p0), s1 = shear(p1);
         const ux = s1[0] - s0[0], uy = s1[1] - s0[1], ul = Math.hypot(ux, uy);
         els.push({
@@ -184,6 +260,8 @@ export function computeLayout(params) {
       });
     }
   }
+
+  if (tooShort) warnings.push('Některé segmenty se do číslice nevejdou – zvětšete číslici, nebo zmenšete tloušťku segmentu či mezeru.');
 
   // ohraničení obsahu: všechny tvary + rohy buněk (kvůli mezerám na krajích)
   let minX = Infinity, maxX = -Infinity, minY = 0, maxY = H;
