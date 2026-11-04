@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Miloslav Brada
+//
 // Exporty: binární STL, 3MF (pouzdro + difuzory jako díly jednoho objektu) a ZIP.
 
 const CRC_TABLE = (() => {

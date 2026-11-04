@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Miloslav Brada
+//
 // Drobné šablonové písmo pro symboly (jednotky apod.) svícené jednou LED.
 // Znaky jsou kreslené tahy (středové čáry); tloušťku dává parametr symStroke.
 // Uzavřená očka (°, %, A, O, P…) mají záměrné přerušení, aby maska v čele neměla

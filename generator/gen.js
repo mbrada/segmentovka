@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Miloslav Brada
+//
 // Geometrie generátoru pouzdra pro 7segmentový displej z modulů WS2812B.
 //
 // Souřadnice:
@@ -5,7 +8,8 @@
 //  - model 3D: čelo leží na z = 0 (tiskne se čelem dolů), X = šířka − x (zrcadlení,
 //    protože na čelo se díváme zespodu), Y = y, Z roste dozadu.
 //
-// Výchozí hodnoty odpovídají původnímu Case.3mf (7-Segment Uhr v38, 88:88).
+// Výchozí hodnoty odpovídají původnímu Case.3mf (88:88) z modelu „7 segment LED clock“ od AWSW,
+// https://www.printables.com/model/325415-7-segment-led-clock, licence CC BY-NC 4.0.
 
 import { layoutSymbol, strokePolygons, convexHull } from './symbols.js';
 import { computeSplit, jointPoint, JOINT } from './split.js';

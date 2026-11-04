@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Miloslav Brada
+//
 // Sestaví modely v Node a uloží STL – pro kontrolu geometrie.
 // Použití: node test/build.mjs [výstupní_adresář] ['{"layout":"88.88"}']
 import Module from '../manifold.js';

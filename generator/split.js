@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Miloslav Brada
+//
 // Dělení velkého pouzdra na díly, které se vejdou na tiskovou plochu.
 //
 // Řezy jsou rovné (svislé a vodorovné) a nikdy nevedou přes lůžko LED. Při volbě řezu se

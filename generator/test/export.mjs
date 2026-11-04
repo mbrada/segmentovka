@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Miloslav Brada
+//
 // Ověří ZIP a 3MF export: node test/export.mjs <výstupní_adresář>
 import Module from '../manifold.js';
 import { computeLayout, buildModels, lidToPrint, ledMap } from '../gen.js';

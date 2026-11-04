@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Miloslav Brada
+//
 // Výpočet geometrie mimo hlavní vlákno, aby se stránka při generování nezasekla.
 import Module from './manifold.js';
 import { computeLayout, buildModels } from './gen.js';

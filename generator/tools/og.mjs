@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Miloslav Brada
+//
 // Náhledový obrázek pro sdílení odkazu (Open Graph, 1200 × 630).
 // Použití: node tools/og.mjs og.svg && inkscape og.svg --export-type=png --export-filename=og.png
 // Displej vzniká přímo z generátoru (styl LCD), rozsvícené segmenty ukazují „12:45“.

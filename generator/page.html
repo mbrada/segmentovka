@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later · Copyright (C) 2026 Miloslav Brada -->
 <title>Segmentovka – generátor pouzdra pro 7segmentový displej z WS2812B</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="description" content="Navrhněte si 3D tisknutelné pouzdro pro velký 7segmentový displej z LED WS2812B – hodiny, teploměr, meteostanice. Export STL a 3MF, difuzory i mapa LED.">
@@ -171,7 +172,13 @@ h1, h2, h3 { text-wrap: balance; margin: 0; }
 .about summary::after { content: "+"; color: var(--muted); font-family: var(--font-mono); }
 .about details[open] summary::after { content: "−"; }
 .about details p { margin-top: 6px; color: var(--muted); }
+.about a { color: var(--ink); text-underline-offset: 2px; }
 @media (max-width: 960px) { .about { grid-template-columns: minmax(0, 1fr); } }
+/* ---------- patička: autor, licence, zdrojový kód a původ tvaru pouzdra ---------- */
+.site-foot { display: grid; gap: 4px; justify-items: center; text-align: center; font-size: 13px; color: var(--muted); padding-top: 6px; }
+.site-foot p { margin: 0; max-width: 110ch; }
+.site-foot a { color: inherit; text-underline-offset: 2px; }
+.site-foot a:hover { color: var(--ink); }
 .note { font-size: 13px; color: var(--muted); margin: 2px 0 0; }
 /* výběr otvoru pro kabel: obrys krabičky zepředu, boky na obrysu, zadní stěna 3 × 3 */
 .row.usb-row { align-items: start; padding-block: 2px 4px; }
@@ -380,10 +387,19 @@ pre { margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 1
       </details>
       <details>
         <summary>Je generátor zdarma?</summary>
-        <p>Ano. Výpočet běží celý ve vašem prohlížeči a model se nikam neodesílá.</p>
+        <p>Ano. Výpočet běží celý ve vašem prohlížeči a model se nikam neodesílá. Generátor je svobodný software: <a href="https://github.com/mbrada/segmentovka" target="_blank" rel="noopener">zdrojový kód je na GitHubu</a> pod licencí GNU AGPL-3.0. Můžete ho upravit i provozovat jinde, upravenou verzi ale musíte zveřejnit pod stejnou licencí.</p>
+      </details>
+      <details>
+        <summary>Smím vytištěná pouzdra prodávat?</summary>
+        <p>Ne. Pro sebe je tiskněte a upravujte, jak chcete. Tvar pouzdra ale vychází z modelu <a href="https://www.printables.com/model/325415-7-segment-led-clock" target="_blank" rel="noopener">7 segment LED clock</a> od AWSW, jehož licence <a href="https://creativecommons.org/licenses/by-nc/4.0/deed.cs" target="_blank" rel="noopener">CC BY-NC 4.0</a> komerční použití nedovoluje.</p>
       </details>
     </div>
   </section>
+
+  <footer class="site-foot">
+    <p>© 2026 Miloslav Brada · svobodný software pod licencí <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">GNU AGPL-3.0</a>, bez jakékoli záruky · <a href="https://github.com/mbrada/segmentovka" target="_blank" rel="noopener">zdrojový kód na GitHubu</a></p>
+    <p>Tvar pouzdra vychází z modelu <a href="https://www.printables.com/model/325415-7-segment-led-clock" target="_blank" rel="noopener">7 segment LED clock</a> od AWSW (<a href="https://creativecommons.org/licenses/by-nc/4.0/deed.cs" target="_blank" rel="noopener">CC BY-NC 4.0</a>), upraveno.</p>
+  </footer>
 </div>
 
 <form class="dim-pop" id="dim-pop" hidden autocomplete="off" aria-labelledby="dim-name">

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Miloslav Brada
+//
 // Google Analytics se souhlasem s cookies. Jen pro samostatný web: build.sh skript vloží do <head>.
 // Consent Mode v2 v základním režimu: dokud návštěvník nesouhlasí, gtag.js se vůbec nenačte
 // a Googlu nic neodchází. Volba se pamatuje v localStorage na 12 měsíců, pak se lišta ukáže znovu.

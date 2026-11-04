@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Miloslav Brada
 # Složí samostatný web do dist/: page.html (obsah stránky ve tvaru pro Claude Artifact)
 # se doplní o <!doctype>, <head> a <body>, přibudou moduly a WASM jádro.
 set -euo pipefail

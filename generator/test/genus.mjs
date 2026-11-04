@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Miloslav Brada
+//
 // Kontroly topologie pouzdra:
 //  - genus hlavního tělesa = počet LED (každý světlovod segmentu je jeden průchozí otvor);
 //    u symbolů má jedna dutina víc otvorů (každý souvislý tah písma), proto se tam genus nekontroluje,
