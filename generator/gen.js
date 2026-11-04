@@ -8,7 +8,7 @@
 //  - model 3D: čelo leží na z = 0 (tiskne se čelem dolů), X = šířka − x (zrcadlení,
 //    protože na čelo se díváme zespodu), Y = y, Z roste dozadu.
 //
-// Výchozí hodnoty odpovídají původnímu Case.3mf (88:88) z modelu „7 segment LED clock“ od AWSW,
+// Výchozí hodnoty odpovídají pouzdru Case.3mf (88:88) z modelu „7 segment LED clock“ od AWSW,
 // https://www.printables.com/model/325415-7-segment-led-clock, licence CC BY-NC 4.0.
 
 import { layoutSymbol, strokePolygons, convexHull } from './symbols.js';

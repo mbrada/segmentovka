@@ -1,9 +1,10 @@
 # Segmentovka – generátor pouzdra 7segmentového displeje
 
 Webový generátor pouzdra pro 7segmentový displej z kulatých modulů WS2812B (⌀ 10 mm),
-které se zezadu jen zacvaknou do lůžka. Vychází z `../Case.3mf` (hodiny 88:88) z modelu
+které se zezadu jen zacvaknou do lůžka. Vychází z pouzdra `Case.3mf` (hodiny 88:88) z modelu
 [7 segment LED clock](https://www.printables.com/model/325415-7-segment-led-clock) od AWSW
-(CC BY-NC 4.0); výchozí parametry ho reprodukují (objem 258,7 vs. 259,6 cm³, řezy se shodují).
+(CC BY-NC 4.0; v repozitáři není, je na Printables). Výchozí parametry ho reprodukují
+(objem 258,7 vs. 259,6 cm³, řezy se shodují).
 Licence generátoru: GNU AGPL-3.0-or-later, podrobnosti v `../README.md`.
 
 Běží na https://segmentovka.miloslavbrada.cz

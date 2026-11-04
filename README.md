@@ -1,10 +1,11 @@
 # Segmentovka
 
 Pouzdro pro 7segmentový displej z modulů WS2812B, které se zezadu jen zacvaknou do lůžka.
+Vychází z pouzdra hodin 88:88 z modelu
+[7 segment LED clock](https://www.printables.com/model/325415-7-segment-led-clock) od AWSW.
+Původní soubor modelu (`Case.3mf`) v repozitáři není, stáhnete ho z Printables
+(licence CC BY-NC 4.0).
 
-- `Case.3mf` – původní pouzdro hodin 88:88 z modelu
-  [7 segment LED clock](https://www.printables.com/model/325415-7-segment-led-clock) od AWSW,
-  ze kterého generátor vychází
 - `generator/` – webový generátor pouzdra s vlastním rozložením, běží na https://segmentovka.miloslavbrada.cz
   (podrobnosti v `generator/README.md`)
 
@@ -13,7 +14,7 @@ Pouzdro pro 7segmentový displej z modulů WS2812B, které se zezadu jen zacvakn
 - Generátor (vše v `generator/`, pokud není uvedeno jinak): © 2026 Miloslav Brada,
   [GNU AGPL-3.0-or-later](LICENSE). Kdo ho upraví a zveřejní, nebo upravenou verzi provozuje
   jako webovou službu, musí její zdrojový kód zpřístupnit pod stejnou licencí.
-- `Case.3mf` a tvar pouzdra, ze kterého generátor vychází: model
+- Tvar pouzdra, ze kterého generátor vychází: model
   [7 segment LED clock](https://www.printables.com/model/325415-7-segment-led-clock) od AWSW,
   licence [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/) – uveďte autora,
   nepoužívejte komerčně. Vytištěná pouzdra proto nejsou na prodej.

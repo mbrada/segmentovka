@@ -2,3 +2,4 @@ generator/dist/
 node_modules/
 *.log
 __pycache__/
+/Case.3mf
