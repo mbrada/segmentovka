@@ -28,7 +28,10 @@ Běží na https://segmentovka.miloslavbrada.cz
   čísla kót jdou měnit kolečkem myši (o krok parametru, se Shiftem ×10), šipkami, nebo kliknutím
   a zadáním hodnoty – odvozené kóty (celková šířka a výška, okraj nahoře a dole, čepy) se
   dopočítají přes parametr, na kterém závisí (`DIM_BIND` v `page.html`); rozteč otvorů na
-  zavěšení je dána šířkou pouzdra a měnit nejde
+  zavěšení je dána šířkou pouzdra a měnit nejde, takové fixní kóty jsou šedé; změny z kót jdou
+  vrátit tlačítkem „Vrátit změny kót“ nebo po jedné v dialogu kóty (na hodnotu před změnami
+  ve výkresu; změna parametru v panelu se bere jako nový výchozí bod)
+- popisek pod čelním pohledem se zalamuje do šířky výkresu, u úzkých pouzder se zmenší písmo
 - dělení na díly (`split.js`): když se pouzdro nevejde na tiskovou plochu, rozdělí se rovnými
   řezy, které nevedou přes lůžka LED a co nejméně přes světlovody; na spoji mají díly stěny
   s rybinovými zámky (zasunou se zezadu) a/nebo šrouby M3 s maticí, ve stěnách jsou výřezy pro

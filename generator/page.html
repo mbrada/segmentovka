@@ -202,11 +202,15 @@ pre { margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 1
 .fp-dim-l { stroke: var(--ink); stroke-width: var(--dw); }
 .fp-dim-t { stroke: var(--ink); stroke-width: calc(var(--dw) * 1.6); }
 .fp-dim-x { stroke: var(--muted); stroke-width: calc(var(--dw) * 0.8); }
-.fp-depth { fill: var(--ink); font-family: var(--font-ui); }
+.fp-dim.fix { fill: var(--muted); }
+.fp-dim-l.fix, .fp-dim-t.fix { stroke: var(--muted); }
+/* řádek s hloubkou: měnitelná čísla plnou barvou, ostatní šedě */
+.fp-depth { fill: var(--muted); font-family: var(--font-ui); }
+.fp-depth .ed { fill: var(--ink); }
 /* kóty, které jdou měnit kolečkem nebo kliknutím; průhledný tah zvětší plochu pro myš */
 .front-pane .ed { cursor: pointer; stroke: transparent; paint-order: stroke; }
 .front-pane .ed:hover, .front-pane .ed.on { fill: var(--led); }
-.dim-pop { position: absolute; z-index: 30; width: 250px; display: grid; gap: 8px; padding: 10px 12px 12px; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 8px 28px rgb(0 0 0 / 0.28); }
+.dim-pop { position: absolute; z-index: 30; width: 280px; max-width: calc(100vw - 16px); box-sizing: border-box; display: grid; gap: 8px; padding: 10px 12px 12px; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 8px 28px rgb(0 0 0 / 0.28); }
 .dim-pop[hidden] { display: none; }
 .dim-pop label { font-weight: 700; font-size: 14px; }
 .dim-pop .num { display: flex; }
@@ -215,6 +219,7 @@ pre { margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 1
 .dim-pop small.err { color: var(--warn-ink); background: var(--warn-bg); border-radius: 4px; padding: 4px 6px; }
 .tool-hint { font-size: 12px; color: var(--muted); }
 .dim-btns { display: flex; justify-content: flex-end; gap: 6px; }
+.dim-btns #dim-revert { margin-right: auto; }
 .fp-usb { fill: none; stroke: var(--display-fg); stroke-width: 0.5; stroke-dasharray: 1.5 1; opacity: 0.7; }
 .fp-sock { fill: none; stroke: var(--muted); stroke-width: 0.3; stroke-dasharray: 0.8 1; opacity: 0.7; }
 .fp-seg { fill: var(--led); }
@@ -275,6 +280,7 @@ pre { margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 1
         <div class="tools" id="tools-front" hidden>
           <label class="toggle"><input type="checkbox" id="v-dims">Kóty</label>
           <span class="tool-hint" id="dims-hint" hidden>čísla měníte kolečkem myši nebo kliknutím</span>
+          <button type="button" class="tool" id="dims-undo" hidden>Vrátit změny kót</button>
         </div>
       </div>
       <div class="viewport" id="viewport">
@@ -321,7 +327,7 @@ pre { margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 1
   <label for="dim-val" id="dim-name">Kóta</label>
   <span class="num"><input type="text" id="dim-val" inputmode="decimal" spellcheck="false" enterkeyhint="done"><span>mm</span></span>
   <small id="dim-note" aria-live="polite"></small>
-  <div class="dim-btns"><button type="button" class="btn" id="dim-cancel">Zrušit</button><button type="submit" class="btn primary">Použít</button></div>
+  <div class="dim-btns"><button type="button" class="btn" id="dim-revert" hidden></button><button type="button" class="btn" id="dim-cancel">Zrušit</button><button type="submit" class="btn primary">Použít</button></div>
 </form>
 
 <script type="module">
@@ -970,9 +976,10 @@ function frontDims(L) {
   const lv = f * 2.4, t = f * 0.4, ov = t + 0.6;
   const num = (v) => fmt(v, 2);
   let s = '';
-  const tick = (x, y) => `<line x1="${x - t}" y1="${y + t}" x2="${x + t}" y2="${y - t}" class="fp-dim-t"/>`;
+  // fixní kóty (nejdou měnit) jsou šedé – čára, značky i číslo
+  const tick = (x, y, fx) => `<line x1="${x - t}" y1="${y + t}" x2="${x + t}" y2="${y - t}" class="fp-dim-t${fx}"/>`;
   const text = (pos, txt, id) => {
-    if (!id) return `<text ${pos} class="fp-dim">${txt}</text>`;
+    if (!id) return `<text ${pos} class="fp-dim fix">${txt}<title>odvozený rozměr, nejde měnit</title></text>`;
     const a = dimAttr(L, id, f * 0.9);
     return `<text ${pos} class="fp-dim ed"${a.attr}>${txt}${a.tip}</text>`;
   };
@@ -984,19 +991,19 @@ function frontDims(L) {
   // vodorovná kóta x0–x1 na výšce y; vynášecí čáry od bodů (x0, ya) a (x1, yb)
   const hdim = (x0, x1, y, ya, yb, id) => {
     if (x1 - x0 < 0.05) return;
-    const txt = num(x1 - x0);
+    const txt = num(x1 - x0), fx = id ? '' : ' fix';
     const d = y > ya ? 1 : -1;
     for (const [x, yf] of [[x0, ya], [x1, yb]]) s += `<line x1="${x}" y1="${Y(yf + d)}" x2="${x}" y2="${Y(y + d * ov)}" class="fp-dim-x"/>`;
-    s += `<line x1="${x0}" y1="${Y(y)}" x2="${x1}" y2="${Y(y)}" class="fp-dim-l"/>${tick(x0, Y(y))}${tick(x1, Y(y))}`;
+    s += `<line x1="${x0}" y1="${Y(y)}" x2="${x1}" y2="${Y(y)}" class="fp-dim-l${fx}"/>${tick(x0, Y(y), fx)}${tick(x1, Y(y), fx)}`;
     s += label(txt, x1 - x0, (a) => text(`x="${x0 + a}" y="${Y(y) - f * 0.35}" font-size="${f}" text-anchor="middle"`, txt, id));
   };
   // svislá kóta y0–y1 na x; vynášecí čáry od bodů (xa, y0) a (xb, y1); text čte zdola
   const vdim = (y0, y1, x, xa, xb, id) => {
     if (y1 - y0 < 0.05) return;
-    const txt = num(y1 - y0);
+    const txt = num(y1 - y0), fx = id ? '' : ' fix';
     const d = x > xa ? 1 : -1;
     for (const [xf, yy] of [[xa, y0], [xb, y1]]) s += `<line x1="${xf + d}" y1="${Y(yy)}" x2="${x + d * ov}" y2="${Y(yy)}" class="fp-dim-x"/>`;
-    s += `<line x1="${x}" y1="${Y(y0)}" x2="${x}" y2="${Y(y1)}" class="fp-dim-l"/>${tick(x, Y(y0))}${tick(x, Y(y1))}`;
+    s += `<line x1="${x}" y1="${Y(y0)}" x2="${x}" y2="${Y(y1)}" class="fp-dim-l${fx}"/>${tick(x, Y(y0), fx)}${tick(x, Y(y1), fx)}`;
     s += label(txt, y1 - y0, (a) => text(`transform="translate(${x - f * 0.35} ${Y(y0 + a)}) rotate(-90)" font-size="${f}" text-anchor="middle"`, txt, id));
   };
 
@@ -1036,6 +1043,28 @@ function frontDims(L) {
   return { svg: `<g class="dims" style="--dw:${(f * 0.065).toFixed(3)}">${s}</g>`, pad: [m, top * lv + f + 3, top * lv + f + 3, 2 * lv + f + 3], f };
 }
 
+// 2–4 díly, 5 a víc dílů
+const dilu = (n) => (n >= 2 && n <= 4 ? 'díly' : 'dílů');
+// šířka textu popisku písmem stránky (v jednotkách výkresu při velikosti písma size)
+let measureCtx;
+function captionW(txt, size) {
+  if (measureCtx === undefined) measureCtx = document.createElement('canvas').getContext('2d');
+  if (!measureCtx) return txt.length * size * 0.55;
+  measureCtx.font = `100px ${getComputedStyle(document.documentElement).getPropertyValue('--font-ui')}`;
+  return (measureCtx.measureText(txt).width * size) / 100;
+}
+// rozdělí části textu (spojené „ · “) do řádků, aby žádný nebyl delší než maxW; vrací indexy částí po řádcích
+function wrapCaption(parts, size, maxW) {
+  const lines = [];
+  let cur = [];
+  parts.forEach((t, i) => {
+    if (cur.length && captionW([...cur.map((j) => parts[j]), t].join(' · '), size) > maxW) { lines.push(cur); cur = []; }
+    cur.push(i);
+  });
+  if (cur.length) lines.push(cur);
+  return lines;
+}
+
 function renderFront() {
   const pane = $('#front-pane');
   if (!L) return;
@@ -1046,8 +1075,27 @@ function renderFront() {
   const D = $('#v-dims').checked ? frontDims(L) : null;
   // okraje výkresu [vlevo, nahoře, vpravo, dole]; pod obrysem popisek (a s kótami i hloubka)
   const [pl, pt, pr, pb] = D ? D.pad.map((v) => Math.max(14, v)) : [14, 14, 14, 0];
-  const cf = Math.max(5, Math.min(9, Math.max(W, H) * 0.013)); // písmo popisku roste s výkresem
-  const capY = H + pb + 4 + cf, bottom = capY + cf * (D ? 2.6 : 3);
+  const sp = L.split;
+  // popisek pod obrysem (a s kótami hloubka): části spojené „ · “ zalomené do šířky výkresu
+  // kolem středu obrysu; písmo roste s výkresem, u úzkého se zmenší, aby se vešla každá část
+  const capParts = [`${fmt(W)} × ${fmt(H)} mm`, 'pohled zepředu', 'čísla = pořadí LED v řetězu', `čárkovaně lůžka, sloupky${L.usb ? ' a otvor pro kabel' : ''}`];
+  if (sp && sp.n > 1) capParts.push(`${sp.n} ${dilu(sp.n)}: ◇ zámek, ○ šroub, ▭ výřez pro vodiče`);
+  const pg = postPeg(p);
+  // hloubka zepředu vidět není – aspoň jako text; ed obalí číslo, které jde měnit
+  const depthParts = (ed) => !D ? [] : [
+    `hloubka: pouzdro ${ed('depth', `${fmt(p.depth)} mm`)}${p.lid ? ` + krabička ${ed('lidDepth', `${fmt(p.lidDepth)} mm`)} = ${fmt(p.depth + p.lidDepth)} mm` : ''}`,
+    ...(pg.peg ? [`čepy krabičky ${ed('peg', `${fmt(pg.peg, 2)} mm`)} do sloupků`] : []),
+    'kóty v mm',
+  ];
+  const depthText = depthParts((id, txt) => txt);
+  const capW = 2 * Math.min(W / 2 + pl, W / 2 + pr) * 0.96;
+  let cf = Math.max(5, Math.min(9, Math.max(W, H) * 0.013));
+  const widest = Math.max(...[...capParts, ...depthText].map((t) => captionW(t, cf)));
+  if (widest > capW) cf *= capW / widest;
+  const capLines = wrapCaption(capParts, cf, capW), depthLines = wrapCaption(depthText, cf, capW);
+  const capY = H + pb + 4 + cf, lh = cf * 1.4;
+  // pod posledním řádkem místo pro stavový řádek v rohu náhledu
+  const bottom = capY + lh * (capLines.length + depthLines.length - 1) + cf * 3;
   let s = `<svg viewBox="${-pl} ${-pt} ${W + pl + pr} ${bottom + pt}" role="img" aria-label="Čelní pohled na displej ${p.layout} s pořadím LED${D ? ' a kótami' : ''}">`;
   s += `<rect x="0" y="0" width="${W}" height="${H}" rx="${Math.min(2, p.chamfer * 2)}" class="fp-case"/>`;
   for (const po of L.posts) {
@@ -1088,7 +1136,6 @@ function renderFront() {
     }
     s += `<text x="${e.c[0]}" y="${Y(e.c[1])}" font-size="${fs}" text-anchor="middle" dominant-baseline="central" class="fp-num">${e.led}</text>`;
   }
-  const sp = L.split;
   if (sp && sp.n > 1) {
     for (const J of sp.joints) {
       const [ax, ay] = jointPoint(J, 0, J.from), [bx, by] = jointPoint(J, 0, J.to);
@@ -1108,18 +1155,20 @@ function renderFront() {
     }
     for (const q of sp.pieces) s += `<text x="${q.r[0] + 4}" y="${Y(q.r[3]) + 9}" font-size="7" class="fp-piece">${q.k}</text>`;
   }
-  if (D) {
-    s += D.svg;
-    // hloubka zepředu vidět není – aspoň jako text
-    const pg = postPeg(p);
-    const ed = (id, txt) => { const a = dimAttr(L, id, cf * 0.9); return `<tspan class="ed"${a.attr}>${txt}${a.tip}</tspan>`; };
-    s += `<text x="${W / 2}" y="${capY + cf * 1.4}" font-size="${cf}" text-anchor="middle" class="fp-depth">hloubka: pouzdro ${ed('depth', `${fmt(p.depth)} mm`)}${p.lid ? ` + krabička ${ed('lidDepth', `${fmt(p.lidDepth)} mm`)} = ${fmt(p.depth + p.lidDepth)} mm${pg.peg ? ` · čepy krabičky ${ed('peg', `${fmt(pg.peg, 2)} mm`)} do sloupků` : ''}` : ''} · kóty v mm</text>`;
+  if (D) s += D.svg;
+  const depthHtml = depthParts((id, txt) => { const a = dimAttr(L, id, cf * 0.9); return `<tspan class="ed"${a.attr}>${txt}${a.tip}</tspan>`; });
+  let ly = capY;
+  for (const [parts, lines, cls] of [[capParts, capLines, 'fp-cap'], [depthHtml, depthLines, 'fp-depth']]) {
+    for (const ln of lines) {
+      s += `<text x="${W / 2}" y="${ly}" font-size="${cf}" text-anchor="middle" class="${cls}">${ln.map((i) => parts[i]).join(' · ')}</text>`;
+      ly += lh;
+    }
   }
-  s += `<text x="${W / 2}" y="${capY}" font-size="${cf}" text-anchor="middle" class="fp-cap">${fmt(W)} × ${fmt(H)} mm · pohled zepředu · čísla = pořadí LED v řetězu · čárkovaně lůžka, sloupky${L.usb ? ' a otvor pro kabel' : ''}${sp && sp.n > 1 ? ` · ${sp.n} dílů: ◇ zámek, ○ šroub, ▭ výřez pro vodiče` : ''}</text>`;
   s += '</svg>';
   const foc = pane.contains(document.activeElement) && document.activeElement.dataset ? document.activeElement.dataset.dim : null;
   pane.innerHTML = s;
   if (!D) closeDimPop(false);
+  syncDimUndo();
   if (foc) { const el = pane.querySelector(`[data-dim="${foc}"]`); if (el) el.focus({ preventScroll: true }); }
   if (dimWheel.id && performance.now() - dimWheel.t < WHEEL_HOLD) { const el = pane.querySelector(`[data-dim="${dimWheel.id}"]`); if (el) el.classList.add('on'); }
 }
@@ -1135,7 +1184,7 @@ function renderFacts() {
     ['Napájení', `5 V, až <b>${fmt(amps, 2)}</b> A při plném bílém jasu`],
     ['Šrouby', `<b>${L.posts.length}</b> × M3 × ${lidScrewLen(p).join('–')} mm${jointScrews(L) ? ` a <b>${jointScrews(L)}</b> × M3 × 16 s maticí na spoje dílů` : ''}`],
     ['Tisk', L.split && L.split.n > 1
-      ? `<b>${L.split.n}</b> dílů (${L.split.nx} × ${L.split.ny}), největší ${fmt(Math.max(...L.split.pieces.map((q) => q.r[2] - q.r[0])))} × ${fmt(Math.max(...L.split.pieces.map((q) => q.r[3] - q.r[1])))} mm`
+      ? `<b>${L.split.n}</b> ${dilu(L.split.n)} (${L.split.nx} × ${L.split.ny}), největší ${fmt(Math.max(...L.split.pieces.map((q) => q.r[2] - q.r[0])))} × ${fmt(Math.max(...L.split.pieces.map((q) => q.r[3] - q.r[1])))} mm`
       : `jeden kus, vejde se na plochu ${fmt(p.bedW)} × ${fmt(p.bedH)} mm`],
     ['Číslice', `${fmt(p.digitW)} × ${fmt(p.digitH)} mm, segment ${fmt(p.segW)} mm, ${((STYLES.find((s) => s[0] === p.segStyle) || STYLES[0])[1]).toLowerCase()}${p.slant ? `, sklon ${fmt(p.slant)}°` : ''}`],
   ];
@@ -1198,7 +1247,7 @@ function readme(lay) {
     jointScrews(lay) ? `- ${jointScrews(lay)} × šroub M3 × 16 s maticí na spoje dílů` : null,
     ...(lay.split && lay.split.n > 1 ? [
       '',
-      `Dělení: ${lay.split.n} dílů (${lay.split.nx} × ${lay.split.ny}), číslování zleva shora v čelním pohledu.`,
+      `Dělení: ${lay.split.n} ${dilu(lay.split.n)} (${lay.split.nx} × ${lay.split.ny}), číslování zleva shora v čelním pohledu.`,
       '- díly mají u spoje stěny; rybinové zámky se zasunou do sebe zezadu (díl s perem shora do drážky),',
       '  pak se díly stáhnou šrouby M3 s maticí; vodiče vedou výřezy ve spojových stěnách otevřenými dozadu',
       '- difuzory v *_difuzory.stl jsou celé (přes spoje drží díly u sebe); v 3MF jsou rozdělené podle dílů pro tisk s AMS',
@@ -1327,11 +1376,35 @@ $('#v-dims').addEventListener('change', () => {
 });
 
 // ---------- kóty: změna kolečkem, šipkami a zadáním ----------
+// Změny z kót: parametr → hodnota před první změnou z výkresu a hodnota po poslední.
+// Platí, dokud parametr nikdo jiný nezměnil (pak je jeho nová hodnota výchozí bod).
+const dimEdits = new Map();
+function dimEdited() {
+  for (const [k, e] of dimEdits) if (params[k] !== e.now || e.now === e.orig) dimEdits.delete(k);
+  return dimEdits;
+}
 function setParam(key, v) {
   if (v === params[key]) return;
+  const e = dimEdited().get(key);
+  dimEdits.set(key, { orig: e ? e.orig : params[key], now: v });
   params[key] = v;
   syncInputs();
   changed();
+}
+function revertDims(keys) {
+  const ed = dimEdited();
+  for (const k of keys || [...ed.keys()]) { const e = ed.get(k); if (e) params[k] = e.orig; }
+  syncInputs();
+  changed();
+}
+// tlačítko „Vrátit změny kót“ – jen když nějaké jsou; v bublině co se vrátí
+function syncDimUndo() {
+  const b = $('#dims-undo');
+  if (!b) return;
+  const ed = dimEdited();
+  b.hidden = !$('#v-dims').checked || !ed.size;
+  b.textContent = ed.size > 1 ? `Vrátit změny kót (${ed.size})` : 'Vrátit změnu kóty';
+  b.title = [...ed].map(([k, e]) => `${paramDef(k).label}: ${fmt(e.now, 2)} → ${fmt(e.orig, 2)} mm`).join('\n');
 }
 // krok parametru kóty o n kroků (z popisu parametru v GROUPS), v jeho rozsahu
 function stepDim(id, n) {
@@ -1381,6 +1454,7 @@ $('#front-pane').addEventListener('wheel', (e) => {
   }
   stepDim(id, n * (e.shiftKey ? 10 : 1));
 }, { passive: false });
+$('#dims-undo').addEventListener('click', () => revertDims());
 $('#front-pane').addEventListener('click', (e) => {
   const el = e.target.closest && e.target.closest('[data-dim]');
   if (el) openDimPop(el);
@@ -1408,6 +1482,12 @@ function openDimPop(el) {
   $('#dim-name').textContent = b.name;
   inp.value = String(r2(b.get(L))).replace('.', ',');
   dimNote(b.own ? `Rozsah ${fmt(d.min)}–${fmt(d.max)} mm.` : `Změní se parametr „${d.label}“ (teď ${fmt(params[b.key], 2)} mm).`);
+  const e = dimEdited().get(b.key), rv = $('#dim-revert');
+  rv.hidden = !e;
+  if (e) {
+    rv.textContent = `Vrátit ${fmt(e.orig, 2)} mm`;
+    rv.title = `vrátí parametr „${d.label}“ na hodnotu před změnami v kótách`;
+  }
   pop.hidden = false;
   const r = el.getBoundingClientRect(), pw = pop.offsetWidth, ph = pop.offsetHeight;
   const x = Math.max(8, Math.min(innerWidth - pw - 8, r.left + r.width / 2 - pw / 2));
@@ -1441,6 +1521,11 @@ $('#dim-pop').addEventListener('submit', (e) => {
   setParam(b.key, v);
 });
 $('#dim-cancel').addEventListener('click', () => closeDimPop());
+$('#dim-revert').addEventListener('click', () => {
+  const b = DIM_BIND[popId];
+  closeDimPop();
+  if (b) revertDims([b.key]);
+});
 $('#dim-pop').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); closeDimPop(); } });
 document.addEventListener('pointerdown', (e) => {
   if ($('#dim-pop').hidden || $('#dim-pop').contains(e.target) || (e.target.closest && e.target.closest('#front-pane [data-dim]'))) return;
@@ -1458,6 +1543,8 @@ mq.addEventListener('change', () => viewer.applyTheme());
 new MutationObserver(() => viewer.applyTheme()).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
 // ---------- start ----------
+// zalomení popisku se měří písmem stránky – po jeho načtení čelní pohled překreslit
+if (document.fonts) document.fonts.ready.then(() => renderFront()).catch(() => {});
 buildPresets();
 buildMeteo();
 buildSymbols();
