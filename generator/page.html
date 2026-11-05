@@ -71,7 +71,8 @@ h1, h2, h3 { text-wrap: balance; margin: 0; }
 /* na širokém displeji v rohu nad polem rozložení, na úzkém vlastní řádek nad názvem */
 @media (min-width: 961px) { .langs { position: absolute; top: -8px; right: 0; z-index: 1; } }
 @media (max-width: 960px) { .langs { margin-bottom: -10px; } }
-.layout-box { display: grid; gap: 8px; min-width: 0; }
+/* minmax(0, 1fr): pole rozložení (velké písmo) by jinak sloupec roztáhlo přes šířku telefonu */
+.layout-box { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; min-width: 0; }
 .layout-box label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
 .layout-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: stretch; }
 #p-layout {
