@@ -13,6 +13,7 @@
 {
 'neutral': [
     'Segmentovka', '3D model', '3MF', 'mm', 'LCD', '7 segment LED clock', 'CC BY-NC 4.0', 'GNU AGPL-3.0',
+    'Miloslav Brada',
 ],
 'pairs': [
 # ---------- hlavička dokumentu ----------
@@ -115,8 +116,8 @@
  '<p>No. Print and modify them for yourself as you like. The shape of the case, however, is based on the <a href="https://www.printables.com/model/325415-7-segment-led-clock" target="_blank" rel="noopener">7 segment LED clock</a> model by AWSW, whose <a href="https://creativecommons.org/licenses/by-nc/4.0/deed.en" target="_blank" rel="noopener">CC BY-NC 4.0</a> license does not allow commercial use.</p>'),
 
 # ---------- patička ----------
-('<p>© 2026 Miloslav Brada · svobodný software pod licencí <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">GNU AGPL-3.0</a>, bez jakékoli záruky · <a href="https://github.com/mbrada/segmentovka" target="_blank" rel="noopener">zdrojový kód na GitHubu</a></p>',
- '<p>© 2026 Miloslav Brada · free software under the <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">GNU AGPL-3.0</a> license, without any warranty · <a href="https://github.com/mbrada/segmentovka" target="_blank" rel="noopener">source code on GitHub</a></p>'),
+('<p>© 2026 <a href="https://miloslavbrada.cz/" target="_blank" rel="noopener">Miloslav Brada</a> · svobodný software pod licencí <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">GNU AGPL-3.0</a>, bez jakékoli záruky · <a href="https://github.com/mbrada/segmentovka" target="_blank" rel="noopener">zdrojový kód na GitHubu</a></p>',
+ '<p>© 2026 <a href="https://miloslavbrada.cz/" target="_blank" rel="noopener">Miloslav Brada</a> · free software under the <a href="https://www.gnu.org/licenses/agpl-3.0.html" target="_blank" rel="noopener">GNU AGPL-3.0</a> license, without any warranty · <a href="https://github.com/mbrada/segmentovka" target="_blank" rel="noopener">source code on GitHub</a></p>'),
 ('<p>Tvar pouzdra vychází z modelu <a href="https://www.printables.com/model/325415-7-segment-led-clock" target="_blank" rel="noopener">7 segment LED clock</a> od AWSW (<a href="https://creativecommons.org/licenses/by-nc/4.0/deed.cs" target="_blank" rel="noopener">CC BY-NC 4.0</a>), upraveno.</p>',
  '<p>The case shape is based on the <a href="https://www.printables.com/model/325415-7-segment-led-clock" target="_blank" rel="noopener">7 segment LED clock</a> model by AWSW (<a href="https://creativecommons.org/licenses/by-nc/4.0/deed.en" target="_blank" rel="noopener">CC BY-NC 4.0</a>), modified.</p>'),
 
