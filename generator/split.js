@@ -12,6 +12,8 @@
 //  - výřezy pro vodiče otevřené dozadu (u krabičky směrem k pouzdru).
 // Vše ve „spojových“ souřadnicích: n kolmo na řez (od dílu A k dílu B), t podél řezu.
 
+import { T } from './i18n.js';
+
 export const JOINT = { padT: 2.5, padW: 10, dove: { bw: 6, tw: 9, td: 4, boss: 3 } };
 
 const bboxOf = (pts) => {
@@ -60,7 +62,8 @@ export function computeSplit(p, ctx, warnings) {
   const fits = (w, h) => (w <= U && h <= V) || (w <= V && h <= U);
   if (fits(W, H)) return one;
   if (p.splitMode === 'off') {
-    warnings.push(`Pouzdro ${W.toFixed(0)} × ${H.toFixed(0)} mm se nevejde na tiskovou plochu ${p.bedW} × ${p.bedH} mm. Zapněte dělení na díly.`);
+    warnings.push(T(`Pouzdro ${W.toFixed(0)} × ${H.toFixed(0)} mm se nevejde na tiskovou plochu ${p.bedW} × ${p.bedH} mm. Zapněte dělení na díly.`,
+      `The ${W.toFixed(0)} × ${H.toFixed(0)} mm case does not fit on the ${p.bedW} × ${p.bedH} mm print bed. Turn on splitting into pieces.`));
     return one;
   }
   const jw = p.jointWall;
@@ -173,7 +176,8 @@ export function computeSplit(p, ctx, warnings) {
     }
   }
   if (!found) {
-    warnings.push('Pouzdro se nepodařilo rozdělit tak, aby spoje nevedly přes lůžka LED. Zvětšete mezery mezi číslicemi nebo tiskovou plochu.');
+    warnings.push(T('Pouzdro se nepodařilo rozdělit tak, aby spoje nevedly přes lůžka LED. Zvětšete mezery mezi číslicemi nebo tiskovou plochu.',
+      'The case could not be split without the joints crossing LED sockets. Increase the digit gaps or the print bed size.'));
     return one;
   }
 
@@ -203,7 +207,10 @@ export function computeSplit(p, ctx, warnings) {
     const m0 = J.from + (edge0 ? p.wall : jw) + 7, m1 = J.to - (edge1 ? p.wall : jw) - 7;
     J.spots = [];
     J.notches = [];
-    if (m1 - m0 < 4) { warnings.push(`Spoj dílů ${J.a + 1} a ${J.b + 1} je příliš krátký na šrouby a zámky.`); continue; }
+    if (m1 - m0 < 4) {
+      warnings.push(T(`Spoj dílů ${J.a + 1} a ${J.b + 1} je příliš krátký na šrouby a zámky.`, `The joint between pieces ${J.a + 1} and ${J.b + 1} is too short for screws and dovetails.`));
+      continue;
+    }
     const len = m1 - m0;
     const nS = Math.max(2, Math.round(len / 70));
     const types = [];
@@ -243,8 +250,13 @@ export function computeSplit(p, ctx, warnings) {
       if (best !== null) J.notches.push(best);
     }
     J.spots.sort((a, b) => a.s - b.s);
-    if (!J.spots.length) warnings.push(`Spoj dílů ${J.a + 1} a ${J.b + 1}: mezi světlovody není místo pro šrouby ani zámky. Díly bude potřeba slepit.`);
-    if (!J.notches.length) warnings.push(`Spoj dílů ${J.a + 1} a ${J.b + 1}: není místo pro průchod vodičů.`);
+    if (!J.spots.length) {
+      warnings.push(T(`Spoj dílů ${J.a + 1} a ${J.b + 1}: mezi světlovody není místo pro šrouby ani zámky. Díly bude potřeba slepit.`,
+        `Joint between pieces ${J.a + 1} and ${J.b + 1}: there is no room between the light guides for screws or dovetails. The pieces will have to be glued.`));
+    }
+    if (!J.notches.length) {
+      warnings.push(T(`Spoj dílů ${J.a + 1} a ${J.b + 1}: není místo pro průchod vodičů.`, `Joint between pieces ${J.a + 1} and ${J.b + 1}: there is no room for a wire passage.`));
+    }
   }
   return { n: pieces.length, nx: cols.length - 1, ny: rows.length - 1, cols, rows, pieces, joints, bed: [U, V] };
 }

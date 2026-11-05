@@ -7,6 +7,8 @@
 // Odmítnout jde stejně snadno jako přijmout a souhlas jde kdykoli odvolat odkazem v patičce.
 (() => {
   const ID = 'G-GX5DWNWRNJ', KEY = 'segmentovka-consent', TTL = 365 * 864e5;
+  // klasický skript v <head> (ne modul) – jazyk bere přímo z <html lang>, který dává build.sh
+  const T = (cs, en) => (/^en\b/i.test(document.documentElement.lang) ? en : cs);
   window.dataLayer = window.dataLayer || [];
   function gtag() { window.dataLayer.push(arguments); }
   window.gtag = gtag;
@@ -73,10 +75,11 @@
     el.id = 'cc';
     el.className = 'cc';
     el.setAttribute('aria-labelledby', 'cc-t');
-    el.innerHTML = '<h2 id="cc-t">Měření návštěvnosti</h2>'
-      + '<p>S vaším souhlasem bude web měřit návštěvnost přes Google Analytics (analytické cookies). Pomůže to zjistit, jak se generátor používá. Bez souhlasu funguje všechno stejně. '
-      + '<a href="https://policies.google.com/technologies/partner-sites?hl=cs" target="_blank" rel="noopener">Jak Google data zpracovává</a></p>'
-      + '<div class="cc-btns"><button type="button" class="btn" data-v="denied">Odmítnout</button><button type="button" class="btn" data-v="granted">Přijmout</button></div>';
+    el.innerHTML = `<h2 id="cc-t">${T('Měření návštěvnosti', 'Visitor statistics')}</h2>`
+      + `<p>${T('S vaším souhlasem bude web měřit návštěvnost přes Google Analytics (analytické cookies). Pomůže to zjistit, jak se generátor používá. Bez souhlasu funguje všechno stejně.',
+        'With your consent, this site measures visits with Google Analytics (analytics cookies). It helps to see how the generator is used. Everything works the same without consent.')} `
+      + `<a href="https://policies.google.com/technologies/partner-sites?hl=${T('cs', 'en')}" target="_blank" rel="noopener">${T('Jak Google data zpracovává', 'How Google uses the data')}</a></p>`
+      + `<div class="cc-btns"><button type="button" class="btn" data-v="denied">${T('Odmítnout', 'Decline')}</button><button type="button" class="btn" data-v="granted">${T('Přijmout', 'Accept')}</button></div>`;
     el.addEventListener('click', (e) => {
       const v = e.target.closest('button')?.dataset.v;
       if (!v) return;
@@ -100,7 +103,7 @@
     }
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.textContent = 'Nastavení cookies';
+    btn.textContent = T('Nastavení cookies', 'Cookie settings');
     btn.addEventListener('click', bar);
     foot.append(btn);
     if (!choice) bar();

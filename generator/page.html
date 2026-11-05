@@ -62,6 +62,15 @@ h1, h2, h3 { text-wrap: balance; margin: 0; }
 .brand h1 { font-size: 30px; font-weight: 800; font-stretch: 112%; letter-spacing: -0.01em; line-height: 1.05; display: flex; align-items: center; gap: 12px; }
 .brand h1 svg { width: 22px; height: 36px; flex: none; }
 .brand p { margin: 8px 0 0; color: var(--muted); max-width: 58ch; }
+/* přepínač jazyka vpravo nahoře; vkládá ho jen build.sh (samostatný web) místo komentáře lang-switch v hlavičce */
+.top { position: relative; }
+.langs { justify-self: end; display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: var(--panel); font-family: var(--font-mono); font-size: 12px; font-weight: 600; }
+.langs a { padding: 3px 10px; color: var(--muted); text-decoration: none; }
+.langs a:hover { color: var(--ink); }
+.langs a[aria-current="page"] { background: var(--ink); color: var(--panel); }
+/* na širokém displeji v rohu nad polem rozložení, na úzkém vlastní řádek nad názvem */
+@media (min-width: 961px) { .langs { position: absolute; top: -8px; right: 0; z-index: 1; } }
+@media (max-width: 960px) { .langs { margin-bottom: -10px; } }
 .layout-box { display: grid; gap: 8px; min-width: 0; }
 .layout-box label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
 .layout-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: stretch; }
@@ -268,8 +277,9 @@ pre { margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 1
 } }
 </script>
 
-<div class="app">
+<div class="app" lang="cs">
   <header class="top">
+    <!--lang-switch-->
     <div class="brand">
       <h1><svg viewBox="0 0 22 36" aria-hidden="true"><g class="fp-seg"><path d="M5 2h12l-2 3H7z"/><path d="M18 4l1 1v11l-2 1-1-2V7z" opacity=".35"/><path d="M4 4l2 3v8l-1 2-2-1V5z"/><path d="M6 17h10l2 1-2 1H6l-2-1z"/><path d="M18 19l1 1v11l-1 1-2-2v-9z"/><path d="M4 19l2 2v9l-2 2-1-1V20z" opacity=".35"/><path d="M7 31h8l2 3H5z"/></g></svg>Segmentovka</h1>
       <p>Pouzdro pro 7segmentový displej z modulů WS2812B. Modul se zezadu jen zacvakne do lůžka a světlovod vede světlo k segmentu. Výchozí hodnoty odpovídají osvědčeným hodinám 88:88.</p>
@@ -413,121 +423,125 @@ pre { margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 1
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
-import { DEFAULTS, STYLE_GAP, computeLayout, lidToPrint, ledMap, USB_PORTS, lidScrewLen, postPeg, KEYHOLE } from './gen.js';
+import { DEFAULTS, STYLE_GAP, computeLayout, lidToPrint, ledMap, USB_PORTS, lidScrewLen, postPeg, KEYHOLE, dotLabel } from './gen.js';
 import { SYMBOL_PRESETS, METEO } from './symbols.js';
 import { jointPoint } from './split.js';
 import { stl, threeMF, zip } from './export.js';
+import { T, LOCALE, dec } from './i18n.js';
 
 const PRESETS = [
-  ['88:88', 'hodiny'], ['88:88:88', 'hodiny se sekundami'], ['-8:8:8', 'odpočet'], ['88.88', 'desetinné číslo'],
-  ['188', 'do 199'], ['-88°', 'teploměr'], ['-88.8°', 'teploměr s desetinami'], ['-88.8[°C]', 'teploměr se symbolem °C'],
-  ['888[cm]', 'vzdálenost v cm'], ['8888', 'počítadlo'],
+  ['88:88', T('hodiny', 'clock')], ['88:88:88', T('hodiny se sekundami', 'clock with seconds')], ['-8:8:8', T('odpočet', 'countdown')],
+  ['88.88', T('desetinné číslo', 'decimal number')], ['188', T('do 199', 'up to 199')], ['-88°', T('teploměr', 'thermometer')],
+  ['-88.8°', T('teploměr s desetinami', 'thermometer with tenths')], ['-88.8[°C]', T('teploměr se symbolem °C', 'thermometer with a °C symbol')],
+  ['888[cm]', T('vzdálenost v cm', 'distance in cm')], ['8888', T('počítadlo', 'counter')],
 ];
 
 const STYLES = [
-  ['pointed', 'Hroty 45°', 'originál'],
-  ['bevel', 'Šikmé rohy', 'klasický LED'],
-  ['round', 'Zaoblené', 'oblé konce'],
-  ['lcd', 'LCD', 'asymetrické'],
-  ['flat', 'Rovné', 'blokové'],
+  ['pointed', T('Hroty 45°', '45° points'), T('originál', 'original')],
+  ['bevel', T('Šikmé rohy', 'Beveled'), T('klasický LED', 'classic LED')],
+  ['round', T('Zaoblené', 'Rounded'), T('oblé konce', 'round ends')],
+  ['lcd', 'LCD', T('asymetrické', 'asymmetric')],
+  ['flat', T('Rovné', 'Flat'), T('blokové', 'blocky')],
 ];
 
 // [klíč, popis, jednotka | typ, min, max, krok, nápověda]
 const GROUPS = [
-  { id: 'digits', title: 'Číslice', open: true, items: [
-    ['segStyle', 'Styl segmentů', 'styles', STYLES],
-    ['scale', 'Zvětšit nebo zmenšit číslice', 'scale', [0.5, 0.8, 1.25, 1.5, 2, 3]],
-    ['digitH', 'Výška číslice', 'mm', 10, 400, 0.5],
-    ['digitW', 'Šířka číslice', 'mm', 5, 300, 0.5],
-    ['segW', 'Tloušťka segmentu', 'mm', 2, 40, 0.5],
-    ['gap', 'Mezera mezi segmenty', 'mm', 0, 10, 0.01, 'nejmenší vzdálenost sousedních segmentů'],
-    ['slant', 'Sklon číslic', '°', -20, 20, 0.5, 'kladný naklání doprava'],
-    ['digitGap', 'Mezera mezi číslicemi', 'mm', 0, 60, 0.5],
-    ['colonW', 'Šířka pole dvojtečky', 'mm', 5, 80, 0.5],
-    ['dpW', 'Šířka pole desetinné tečky', 'mm', 3, 60, 0.5],
-    ['dotSize', 'Velikost tečky', 'mm', 2, 30, 0.5],
-    ['dotShape', 'Tvar tečky', 'select', [['diamond', 'kosočtverec'], ['circle', 'kruh'], ['square', 'čtverec']]],
+  { id: 'digits', title: T('Číslice', 'Digits'), open: true, items: [
+    ['segStyle', T('Styl segmentů', 'Segment style'), 'styles', STYLES],
+    ['scale', T('Zvětšit nebo zmenšit číslice', 'Scale the digits'), 'scale', [0.5, 0.8, 1.25, 1.5, 2, 3]],
+    ['digitH', T('Výška číslice', 'Digit height'), 'mm', 10, 400, 0.5],
+    ['digitW', T('Šířka číslice', 'Digit width'), 'mm', 5, 300, 0.5],
+    ['segW', T('Tloušťka segmentu', 'Segment thickness'), 'mm', 2, 40, 0.5],
+    ['gap', T('Mezera mezi segmenty', 'Gap between segments'), 'mm', 0, 10, 0.01, T('nejmenší vzdálenost sousedních segmentů', 'smallest distance between neighboring segments')],
+    ['slant', T('Sklon číslic', 'Digit slant'), '°', -20, 20, 0.5, T('kladný naklání doprava', 'positive leans to the right')],
+    ['digitGap', T('Mezera mezi číslicemi', 'Gap between digits'), 'mm', 0, 60, 0.5],
+    ['colonW', T('Šířka pole dvojtečky', 'Colon width'), 'mm', 5, 80, 0.5],
+    ['dpW', T('Šířka pole desetinné tečky', 'Decimal point width'), 'mm', 3, 60, 0.5],
+    ['dotSize', T('Velikost tečky', 'Dot size'), 'mm', 2, 30, 0.5],
+    ['dotShape', T('Tvar tečky', 'Dot shape'), 'select', [['diamond', T('kosočtverec', 'diamond')], ['circle', T('kruh', 'circle')], ['square', T('čtverec', 'square')]]],
   ] },
-  { id: 'case', title: 'Pouzdro', items: [
-    ['margin', 'Okraj kolem číslic', 'mm', 2, 60, 0.5],
-    ['depth', 'Celková hloubka', 'mm', 15, 150, 0.5],
-    ['wall', 'Boční stěna', 'mm', 1, 10, 0.1],
-    ['front', 'Čelní deska', 'mm', 1, 10, 0.1],
-    ['chamfer', 'Sražení přední hrany', 'mm', 0, 3, 0.1],
-    ['tubeWall', 'Stěna světlovodu', 'mm', 0.8, 4, 0.1],
-    ['tubeEndD', 'Průměr konce světlovodu', 'mm', 4, 30, 0.1],
-    ['extraPosts', 'Sloupky i u dvojtečky', 'bool', 'u dlouhých displejů bez dvojtečky uprostřed'],
-    ['postSize', 'Rohový sloupek', 'mm', 6, 30, 0.5],
-    ['midPostW', 'Šířka vnitřního sloupku', 'mm', 5, 20, 0.5],
-    ['screwD', 'Otvor pro šroub', 'mm', 1.5, 6, 0.1, '2,9 mm pro samořezný M3'],
-    ['screwDepth', 'Hloubka otvoru', 'mm', 3, 150, 0.5],
+  { id: 'case', title: T('Pouzdro', 'Case'), items: [
+    ['margin', T('Okraj kolem číslic', 'Margin around the digits'), 'mm', 2, 60, 0.5],
+    ['depth', T('Celková hloubka', 'Total depth'), 'mm', 15, 150, 0.5],
+    ['wall', T('Boční stěna', 'Side wall'), 'mm', 1, 10, 0.1],
+    ['front', T('Čelní deska', 'Front plate'), 'mm', 1, 10, 0.1],
+    ['chamfer', T('Sražení přední hrany', 'Front edge chamfer'), 'mm', 0, 3, 0.1],
+    ['tubeWall', T('Stěna světlovodu', 'Light guide wall'), 'mm', 0.8, 4, 0.1],
+    ['tubeEndD', T('Průměr konce světlovodu', 'Light guide end diameter'), 'mm', 4, 30, 0.1],
+    ['extraPosts', T('Sloupky i u dvojtečky', 'Posts at the colons too'), 'bool', T('u dlouhých displejů bez dvojtečky uprostřed', 'on long displays without a colon, in the middle')],
+    ['postSize', T('Rohový sloupek', 'Corner post'), 'mm', 6, 30, 0.5],
+    ['midPostW', T('Šířka vnitřního sloupku', 'Inner post width'), 'mm', 5, 20, 0.5],
+    ['screwD', T('Otvor pro šroub', 'Screw hole'), 'mm', 1.5, 6, 0.1, T('2,9 mm pro samořezný M3', '2.9 mm for a self-tapping M3')],
+    ['screwDepth', T('Hloubka otvoru', 'Screw hole depth'), 'mm', 3, 150, 0.5],
   ] },
-  { id: 'socket', title: 'Lůžko modulu WS2812B', items: [
-    ['modD', 'Průměr lůžka', 'mm', 5, 30, 0.05, 'pro kulatý modul ⌀ 10 mm'],
-    ['ringH', 'Výška pružného kroužku', 'mm', 0.5, 8, 0.1],
-    ['ringWall', 'Stěna kroužku', 'mm', 0.8, 4, 0.1],
-    ['slotW', 'Drážka v kroužku', 'mm', 0, 20, 0.1, 'rozdělí kroužek na dva pružné oblouky'],
-    ['lip', 'Zobáček pojistky', 'mm', 0, 1.5, 0.05, '0 = držení jen třením jako v originále'],
-    ['pcbT', 'Tloušťka desky modulu', 'mm', 0.6, 3, 0.1, 'jen pro zobáček'],
-    ['pocket', 'Kapsa pod deskou', 'mm', 3, 20, 0.1],
-    ['pocketH', 'Hloubka kapsy', 'mm', 0, 5, 0.1],
-    ['windowSize', 'Okénko pro LED 5050', 'mm', 2, 15, 0.1],
-    ['windowH', 'Výška okénka', 'mm', 0, 10, 0.1],
-    ['coneH', 'Přechod k okénku', 'mm', 0, 10, 0.05],
-    ['backSpace', 'Místo za moduly', 'mm', 0, 60, 0.5, 'pro dráty mezi moduly'],
+  { id: 'socket', title: T('Lůžko modulu WS2812B', 'WS2812B module socket'), items: [
+    ['modD', T('Průměr lůžka', 'Socket diameter'), 'mm', 5, 30, 0.05, T('pro kulatý modul ⌀ 10 mm', 'for a round ⌀ 10 mm module')],
+    ['ringH', T('Výška pružného kroužku', 'Spring ring height'), 'mm', 0.5, 8, 0.1],
+    ['ringWall', T('Stěna kroužku', 'Ring wall'), 'mm', 0.8, 4, 0.1],
+    ['slotW', T('Drážka v kroužku', 'Ring slot'), 'mm', 0, 20, 0.1, T('rozdělí kroužek na dva pružné oblouky', 'splits the ring into two flexible arcs')],
+    ['lip', T('Zobáček pojistky', 'Retaining lip'), 'mm', 0, 1.5, 0.05, T('0 = držení jen třením jako v originále', '0 = friction fit only, as in the original')],
+    ['pcbT', T('Tloušťka desky modulu', 'Module PCB thickness'), 'mm', 0.6, 3, 0.1, T('jen pro zobáček', 'only used by the lip')],
+    ['pocket', T('Kapsa pod deskou', 'Pocket under the PCB'), 'mm', 3, 20, 0.1],
+    ['pocketH', T('Hloubka kapsy', 'Pocket depth'), 'mm', 0, 5, 0.1],
+    ['windowSize', T('Okénko pro LED 5050', 'Window for the 5050 LED'), 'mm', 2, 15, 0.1],
+    ['windowH', T('Výška okénka', 'Window height'), 'mm', 0, 10, 0.1],
+    ['coneH', T('Přechod k okénku', 'Taper to the window'), 'mm', 0, 10, 0.05],
+    ['backSpace', T('Místo za moduly', 'Space behind the modules'), 'mm', 0, 60, 0.5, T('pro dráty mezi moduly', 'for the wires between modules')],
   ] },
-  { id: 'diff', title: 'Difuzory', items: [
-    ['recessDepth', 'Hloubka vybrání v čele', 'mm', 0, 3, 0.1],
-    ['recessInset', 'Osazení pod difuzorem', 'mm', 0, 3, 0.1],
-    ['diffuser', 'Generovat difuzory', 'bool'],
-    ['diffClear', 'Vůle difuzoru', 'mm', 0, 1, 0.05, '0 pro tisk v pouzdře s AMS; u symbolů pak přibude destička za maskou a písmo může být souvislé'],
-    ['diffT', 'Tloušťka difuzoru', 'mm', 0.2, 3, 0.1],
+  { id: 'diff', title: T('Difuzory', 'Diffusers'), items: [
+    ['recessDepth', T('Hloubka vybrání v čele', 'Recess depth in the front'), 'mm', 0, 3, 0.1],
+    ['recessInset', T('Osazení pod difuzorem', 'Ledge under the diffuser'), 'mm', 0, 3, 0.1],
+    ['diffuser', T('Generovat difuzory', 'Generate diffusers'), 'bool'],
+    ['diffClear', T('Vůle difuzoru', 'Diffuser clearance'), 'mm', 0, 1, 0.05, T('0 pro tisk v pouzdře s AMS; u symbolů pak přibude destička za maskou a písmo může být souvislé', '0 to print them inside the case with an AMS; symbols then get a plate behind the mask and the font can be continuous')],
+    ['diffT', T('Tloušťka difuzoru', 'Diffuser thickness'), 'mm', 0.2, 3, 0.1],
   ] },
-  { id: 'sym', title: 'Symboly', items: [
-    ['symNote', 'Symbol zapíšete do rozložení v hranatých závorkách, např. 88.8[cm]. V čele je maska s vyříznutým písmem, které svítí jedna LED přes společný světlovod. Svislá čára skládá symboly pod sebe do sloupce, každý se svou LED: 888.8[°C|%|hPa|ppm]. Když se do výšky číslice nevejdou, písmo se ve sloupci zmenší. Uzavřená očka (°, %, O, P, a…) mají šablonové přerušení, aby z masky nic nevypadlo. Při tisku difuzorů na místě (vůle 0) drží vnitřky písmen destička difuzoru, takže písmo může být souvislé.', 'note'],
-    ['symH', 'Výška písma', 'mm', 5, 60, 0.5, 'výška velkých písmen'],
-    ['symStroke', 'Tloušťka tahu', 'mm', 0.8, 5, 0.1, 'šířka průřezu v masce'],
-    ['symStencil', 'Šablonové písmo', 'select', [['auto', 'automaticky'], ['on', 'vždy přerušit očka'], ['off', 'nikdy, souvislé tahy']], 'automaticky: souvislé jen při tisku difuzorů na místě (vůle 0), oba materiály stejného druhu'],
-    ['symPos', 'Svislá poloha', 'select', [['auto', 'podle symbolu'], ['bottom', 'dole'], ['middle', 'uprostřed'], ['top', 'nahoře']], 'jen u samostatného symbolu; sloupec vyplní celou výšku'],
-    ['symPad', 'Okraj kolem symbolu', 'mm', 0, 20, 0.5],
+  { id: 'sym', title: T('Symboly', 'Symbols'), items: [
+    ['symNote', T('Symbol zapíšete do rozložení v hranatých závorkách, např. 88.8[cm]. V čele je maska s vyříznutým písmem, které svítí jedna LED přes společný světlovod. Svislá čára skládá symboly pod sebe do sloupce, každý se svou LED: 888.8[°C|%|hPa|ppm]. Když se do výšky číslice nevejdou, písmo se ve sloupci zmenší. Uzavřená očka (°, %, O, P, a…) mají šablonové přerušení, aby z masky nic nevypadlo. Při tisku difuzorů na místě (vůle 0) drží vnitřky písmen destička difuzoru, takže písmo může být souvislé.',
+      'Put a symbol into the layout in square brackets, e.g. 88.8[cm]. The front face gets a mask with the lettering cut out, lit by one LED through a shared light guide. A vertical bar stacks symbols into a column, each with its own LED: 888.8[°C|%|hPa|ppm]. If they do not fit into the digit height, the column uses a smaller font. Enclosed counters (°, %, O, P, a…) have stencil bridges so that nothing falls out of the mask. When the diffusers are printed in place (clearance 0), the diffuser plate holds the insides of the letters, so the font can be continuous.'), 'note'],
+    ['symH', T('Výška písma', 'Font height'), 'mm', 5, 60, 0.5, T('výška velkých písmen', 'height of capital letters')],
+    ['symStroke', T('Tloušťka tahu', 'Stroke width'), 'mm', 0.8, 5, 0.1, T('šířka průřezu v masce', 'width of the cut in the mask')],
+    ['symStencil', T('Šablonové písmo', 'Stencil font'), 'select', [['auto', T('automaticky', 'automatic')], ['on', T('vždy přerušit očka', 'always bridge counters')], ['off', T('nikdy, souvislé tahy', 'never, continuous strokes')]], T('automaticky: souvislé jen při tisku difuzorů na místě (vůle 0), oba materiály stejného druhu', 'automatic: continuous only when the diffusers are printed in place (clearance 0), both materials of the same kind')],
+    ['symPos', T('Svislá poloha', 'Vertical position'), 'select', [['auto', T('podle symbolu', 'by symbol')], ['bottom', T('dole', 'bottom')], ['middle', T('uprostřed', 'middle')], ['top', T('nahoře', 'top')]], T('jen u samostatného symbolu; sloupec vyplní celou výšku', 'single symbols only; a column fills the whole height')],
+    ['symPad', T('Okraj kolem symbolu', 'Padding around the symbol'), 'mm', 0, 20, 0.5],
   ] },
-  { id: 'lid', title: 'Zadní krabička', items: [
-    ['lid', 'Generovat krabičku', 'bool'],
-    ['lidDepth', 'Hloubka krabičky', 'mm', 5, 120, 0.5, 'místo pro ESP a zdroj'],
-    ['lidWall', 'Stěna', 'mm', 1, 6, 0.1],
-    ['lidPlate', 'Zadní deska', 'mm', 1, 6, 0.1],
-    ['lidScrewD', 'Průchod pro šroub', 'mm', 2, 6, 0.1],
-    ['lidHeadD', 'Otvor pro hlavu šroubu', 'mm', 4, 12, 0.1],
-    ['lidClamp', 'Dno pod hlavou šroubu', 'mm', 1, 10, 0.5],
-    ['postSink', 'Čepy sloupků', 'mm', 0, 10, 0.5, 'sloupky pouzdra jsou o tolik nižší a sloupky krabičky do nich zasahují – spoj je tužší a krabička sedí přesně; 0 = rovný styk'],
-    ['postFit', 'Vůle čepu', 'mm', 0, 0.6, 0.05, 'ke stěnám pouzdra na každé straně'],
-    ['usb', 'Otvor pro kabel', 'usbpick', 'pohled zepředu: na obrysu bok krabičky, uvnitř zadní stěna'],
-    ['usbW', 'Šířka otvoru', 'mm', 3, 40, 0.5],
-    ['usbH', 'Výška otvoru', 'mm', 3, 30, 0.5],
-    ['keyholes', 'Otvory na zavěšení', 'bool'],
-    ['keyholeGap', 'Rozteč otvorů', 'mm', 0, 1000, 1, 'dva otvory souměrně kolem středu; 0 = automaticky (ve čtvrtinách šířky, u dílů uprostřed každého horního dílu)'],
-    ['keyholeTop', 'Otvory od horní hrany', 'mm', 10, 300, 0.5, 'ke středu velkého otvoru; pouzdro visí na šroubu o 10 mm výš'],
+  { id: 'lid', title: T('Zadní krabička', 'Back box'), items: [
+    ['lid', T('Generovat krabičku', 'Generate the back box'), 'bool'],
+    ['lidDepth', T('Hloubka krabičky', 'Box depth'), 'mm', 5, 120, 0.5, T('místo pro ESP a zdroj', 'room for an ESP and a power supply')],
+    ['lidWall', T('Stěna', 'Wall'), 'mm', 1, 6, 0.1],
+    ['lidPlate', T('Zadní deska', 'Back plate'), 'mm', 1, 6, 0.1],
+    ['lidScrewD', T('Průchod pro šroub', 'Screw clearance hole'), 'mm', 2, 6, 0.1],
+    ['lidHeadD', T('Otvor pro hlavu šroubu', 'Screw head hole'), 'mm', 4, 12, 0.1],
+    ['lidClamp', T('Dno pod hlavou šroubu', 'Floor under the screw head'), 'mm', 1, 10, 0.5],
+    ['postSink', T('Čepy sloupků', 'Post pegs'), 'mm', 0, 10, 0.5, T('sloupky pouzdra jsou o tolik nižší a sloupky krabičky do nich zasahují – spoj je tužší a krabička sedí přesně; 0 = rovný styk', 'the case posts are this much shorter and the box posts reach into them – a stiffer joint and an exact fit; 0 = flat contact')],
+    ['postFit', T('Vůle čepu', 'Peg clearance'), 'mm', 0, 0.6, 0.05, T('ke stěnám pouzdra na každé straně', 'to the case walls on each side')],
+    ['usb', T('Otvor pro kabel', 'Cable hole'), 'usbpick', T('pohled zepředu: na obrysu bok krabičky, uvnitř zadní stěna', 'front view: on the outline a side of the box, inside the back wall')],
+    ['usbW', T('Šířka otvoru', 'Hole width'), 'mm', 3, 40, 0.5],
+    ['usbH', T('Výška otvoru', 'Hole height'), 'mm', 3, 30, 0.5],
+    ['keyholes', T('Otvory na zavěšení', 'Keyholes for hanging'), 'bool'],
+    ['keyholeGap', T('Rozteč otvorů', 'Keyhole spacing'), 'mm', 0, 1000, 1, T('dva otvory souměrně kolem středu; 0 = automaticky (ve čtvrtinách šířky, u dílů uprostřed každého horního dílu)', 'two keyholes centered symmetrically; 0 = automatic (at quarters of the width, with pieces in the middle of each top piece)')],
+    ['keyholeTop', T('Otvory od horní hrany', 'Keyholes from the top edge'), 'mm', 10, 300, 0.5, T('ke středu velkého otvoru; pouzdro visí na šroubu o 10 mm výš', 'to the center of the large hole; the case hangs on a screw 10 mm higher')],
   ] },
-  { id: 'split', title: 'Dělení na díly', items: [
-    ['splitNote', 'Když se pouzdro nevejde na tiskovou plochu, rozdělí se na díly. Řezy nikdy nevedou přes lůžka LED a pokud to jde, ani přes světlovody. Díly mají u spoje stěny s rybinovými zámky (zasunou se do sebe zezadu) nebo šrouby M3 s maticí a výřezy pro vodiče otevřené dozadu. Stejně se rozdělí i krabička.', 'note'],
-    ['splitMode', 'Dělení', 'select', [['auto', 'podle tiskové plochy'], ['off', 'nedělit']]],
-    ['bedW', 'Tisková plocha – šířka', 'mm', 100, 600, 1, 'Bambu X1/P1/A1: 256, A1 mini: 180'],
-    ['bedH', 'Tisková plocha – hloubka', 'mm', 100, 600, 1],
-    ['joinType', 'Spojení dílů', 'select', [['both', 'zámky i šrouby'], ['dovetail', 'jen rybinové zámky'], ['screws', 'jen šrouby M3']]],
-    ['jointWall', 'Spojovací stěna', 'mm', 1.2, 6, 0.1],
-    ['joinClear', 'Vůle zámku', 'mm', 0, 0.6, 0.05],
-    ['notchW', 'Výřez pro vodiče – šířka', 'mm', 4, 40, 0.5],
-    ['notchH', 'Výřez pro vodiče – hloubka', 'mm', 3, 30, 0.5],
+  { id: 'split', title: T('Dělení na díly', 'Splitting into pieces'), items: [
+    ['splitNote', T('Když se pouzdro nevejde na tiskovou plochu, rozdělí se na díly. Řezy nikdy nevedou přes lůžka LED a pokud to jde, ani přes světlovody. Díly mají u spoje stěny s rybinovými zámky (zasunou se do sebe zezadu) nebo šrouby M3 s maticí a výřezy pro vodiče otevřené dozadu. Stejně se rozdělí i krabička.',
+      'If the case does not fit on the print bed, it is split into pieces. The cuts never cross LED sockets and, where possible, avoid the light guides as well. At each joint the pieces have walls with dovetails (they slide together from the back) or M3 screws with nuts, plus wire notches open to the back. The back box is split the same way.'), 'note'],
+    ['splitMode', T('Dělení', 'Splitting'), 'select', [['auto', T('podle tiskové plochy', 'to fit the print bed')], ['off', T('nedělit', 'do not split')]]],
+    ['bedW', T('Tisková plocha – šířka', 'Print bed width'), 'mm', 100, 600, 1, 'Bambu X1/P1/A1: 256, A1 mini: 180'],
+    ['bedH', T('Tisková plocha – hloubka', 'Print bed depth'), 'mm', 100, 600, 1],
+    ['joinType', T('Spojení dílů', 'Joining the pieces'), 'select', [['both', T('zámky i šrouby', 'dovetails and screws')], ['dovetail', T('jen rybinové zámky', 'dovetails only')], ['screws', T('jen šrouby M3', 'M3 screws only')]]],
+    ['jointWall', T('Spojovací stěna', 'Joint wall'), 'mm', 1.2, 6, 0.1],
+    ['joinClear', T('Vůle zámku', 'Dovetail clearance'), 'mm', 0, 0.6, 0.05],
+    ['notchW', T('Výřez pro vodiče – šířka', 'Wire notch width'), 'mm', 4, 40, 0.5],
+    ['notchH', T('Výřez pro vodiče – hloubka', 'Wire notch depth'), 'mm', 3, 30, 0.5],
   ] },
-  { id: 'wire', title: 'Zapojení a kvalita', items: [
-    ['segOrder', 'Pořadí segmentů v číslici', 'text', 'např. abcdefg nebo gfedcba'],
-    ['quality', 'Hladkost oblouků', 'seg.', 16, 96, 4],
+  { id: 'wire', title: T('Zapojení a kvalita', 'Wiring and quality'), items: [
+    ['segOrder', T('Pořadí segmentů v číslici', 'Segment order in a digit'), 'text', T('např. abcdefg nebo gfedcba', 'e.g. abcdefg or gfedcba')],
+    ['quality', T('Hladkost oblouků', 'Curve smoothness'), 'seg.', 16, 96, 4],
   ] },
 ];
 
 const STORE_KEY = 'segmentovka.params.v1';
 const $ = (s) => document.querySelector(s);
-const fmt = (v, d = 1) => Number(v).toLocaleString('cs-CZ', { maximumFractionDigits: d });
+const fmt = (v, d = 1) => Number(v).toLocaleString(LOCALE, { maximumFractionDigits: d });
 
 let params = loadParams();
 let L = null;
@@ -576,7 +590,7 @@ function buildParamsUI() {
       if (kind === 'scale') {
         delete row.dataset.key;
         row.className = 'row scale-row';
-        row.innerHTML = `<span class="styles-label">${label}</span><div class="presets">${it[3].map((f) => `<button type="button" class="chip" data-scale="${f}">×${String(f).replace('.', ',')}</button>`).join('')}</div>`;
+        row.innerHTML = `<span class="styles-label">${label}</span><div class="presets">${it[3].map((f) => `<button type="button" class="chip" data-scale="${f}">×${dec(f)}</button>`).join('')}</div>`;
         row.querySelectorAll('[data-scale]').forEach((b) => b.addEventListener('click', () => scaleDigits(Number(b.dataset.scale))));
         rows.append(row);
         continue;
@@ -615,7 +629,7 @@ function buildParamsUI() {
         };
         row.innerHTML = `<div class="usb-text"><span id="${id}-label">${label}</span><small>${it[3]}</small>
             <b class="usb-name" id="usb-name"></b>
-            <button type="button" class="chip" data-usb="none" aria-pressed="false">bez otvoru</button></div>
+            <button type="button" class="chip" data-usb="none" aria-pressed="false">${USB_PORTS.none}</button></div>
           <div class="usb-pick" role="group" aria-labelledby="${id}-label"><span class="usb-frame" aria-hidden="true"></span>${Object.keys(USB_PORTS).filter((v) => v !== 'none').map(btn).join('')}</div>`;
         row.querySelectorAll('[data-usb]').forEach((b) => b.addEventListener('click', () => {
           params.usb = b.dataset.usb;
@@ -648,8 +662,8 @@ function buildParamsUI() {
   }
   const foot = document.createElement('div');
   foot.className = 'params-foot';
-  foot.innerHTML = `<button class="btn" id="reset">Výchozí hodnoty</button>
-    <button class="btn" id="load-json">Načíst parametry…</button>
+  foot.innerHTML = `<button class="btn" id="reset">${T('Výchozí hodnoty', 'Reset to defaults')}</button>
+    <button class="btn" id="load-json">${T('Načíst parametry…', 'Load parameters…')}</button>
     <input type="file" id="load-file" accept=".json,application/json" hidden>`;
   root.append(foot);
 
@@ -663,9 +677,9 @@ function buildParamsUI() {
     try {
       params = sanitize({ ...DEFAULTS, ...JSON.parse(await f.text()) });
       syncInputs(); changed();
-      setExportMsg(`Načteny parametry ze souboru ${f.name}.`);
+      setExportMsg(T(`Načteny parametry ze souboru ${f.name}.`, `Parameters loaded from ${f.name}.`));
     } catch (_) {
-      setExportMsg('Soubor se nepodařilo načíst. Vyberte parametry.json z exportovaného ZIPu.');
+      setExportMsg(T('Soubor se nepodařilo načíst. Vyberte parametry.json z exportovaného ZIPu.', 'Could not read the file. Choose the params.json from an exported ZIP.'));
     }
     e.target.value = '';
   });
@@ -726,7 +740,7 @@ function markChanged() {
       row.classList.toggle('is-changed', ch);
       if (ch) n++;
     }
-    det.querySelector('.changed').textContent = n ? `${n} změn${n === 1 ? 'a' : n < 5 ? 'y' : ''}` : '';
+    det.querySelector('.changed').textContent = n ? T(`${n} změn${n === 1 ? 'a' : n < 5 ? 'y' : ''}`, `${n} changed`) : '';
   }
 }
 
@@ -755,7 +769,7 @@ function buildSymbols() {
     b.className = 'chip';
     b.type = 'button';
     b.textContent = sym;
-    b.title = `Vložit [${sym}]`;
+    b.title = T(`Vložit [${sym}]`, `Insert [${sym}]`);
     b.addEventListener('click', () => {
       const v = inp.value, at = caret == null || caret > v.length ? v.length : caret;
       const ins = `[${sym}]`;
@@ -802,7 +816,8 @@ function setMeteo(keys) {
 }
 function buildMeteo() {
   const box = $('#meteo');
-  const all = [['all', 'vše', 'Všechny čtyři veličiny: teplota, vlhkost, tlak a CO₂']].concat(METEO.map(([k, label, sym]) => [k, `${label.toLowerCase().replace('co₂', 'CO₂')} ${sym}`, `${label} – symbol ${sym} s vlastní LED`]));
+  const all = [['all', T('vše', 'all'), T('Všechny čtyři veličiny: teplota, vlhkost, tlak a CO₂', 'All four quantities: temperature, humidity, pressure and CO₂')]]
+    .concat(METEO.map(([k, label, sym]) => [k, `${label.toLowerCase().replace('co₂', 'CO₂')} ${sym}`, T(`${label} – symbol ${sym} s vlastní LED`, `${label} – symbol ${sym} with its own LED`)]));
   for (const [k, text, title] of all) {
     const b = document.createElement('button');
     b.className = 'chip';
@@ -834,7 +849,7 @@ function changed() {
   renderWarnings();
   $('#ledmap').textContent = ledMap(L);
   setExportEnabled(false);
-  setStatus('Generuji model…', 'busy');
+  setStatus(T('Generuji model…', 'Generating the model…'), 'busy');
   clearTimeout(buildTimer);
   buildTimer = setTimeout(() => engine.run({ ...params }, L), 220);
 }
@@ -877,13 +892,13 @@ const engine = {
   done(msg) {
     if (msg.id !== this.seq) return;
     if (!msg.ok) {
-      setStatus(`Model se nepodařilo vytvořit: ${msg.error}`, 'err');
+      setStatus(T(`Model se nepodařilo vytvořit: ${msg.error}`, `Could not build the model: ${msg.error}`), 'err');
       return;
     }
     built = { L: this.last.L || computeLayout(this.last.params), R: msg.R, params: { ...this.last.params } };
     viewer.setModels(built);
     const tris = meshList(msg.R).reduce((s, m) => s + m.tri.length / 3, 0);
-    setStatus(`Hotovo za ${fmt(msg.ms / 1000, 2)} s · ${tris.toLocaleString('cs-CZ')} trojúhelníků`);
+    setStatus(T(`Hotovo za ${fmt(msg.ms / 1000, 2)} s · ${tris.toLocaleString(LOCALE)} trojúhelníků`, `Done in ${fmt(msg.ms / 1000, 2)} s · ${tris.toLocaleString(LOCALE)} triangles`));
     setExportEnabled(true);
   },
 };
@@ -1022,25 +1037,25 @@ const viewer = {
 // a jak z rozvržení zjistit délku kóty. own = kóta je přímo ten parametr.
 const dimCell = (L) => L.cells.find((q) => q.t === 'digit') || L.cells.find((q) => q.t === 'minus' || q.t === 'deg');
 const DIM_BIND = {
-  margin: { key: 'margin', own: true, name: 'Okraj kolem číslic', get: (L) => L.p.margin },
-  marginB: { key: 'margin', name: 'Okraj pod číslicí', get: (L) => L.offY },
-  marginT: { key: 'margin', name: 'Okraj nad číslicí', get: (L) => L.caseH - L.offY - L.p.digitH },
-  digitW: { key: 'digitW', own: true, name: 'Šířka číslice', get: (L) => dimCell(L).w },
+  margin: { key: 'margin', own: true, name: T('Okraj kolem číslic', 'Margin around the digits'), get: (L) => L.p.margin },
+  marginB: { key: 'margin', name: T('Okraj pod číslicí', 'Margin below the digit'), get: (L) => L.offY },
+  marginT: { key: 'margin', name: T('Okraj nad číslicí', 'Margin above the digit'), get: (L) => L.caseH - L.offY - L.p.digitH },
+  digitW: { key: 'digitW', own: true, name: T('Šířka číslice', 'Digit width'), get: (L) => dimCell(L).w },
   digitGap: {
-    key: 'digitGap', own: true, name: 'Mezera mezi číslicemi',
+    key: 'digitGap', own: true, name: T('Mezera mezi číslicemi', 'Gap between digits'),
     get: (L) => { const c = dimCell(L), n = L.cells[L.cells.indexOf(c) + 1]; return n ? n.x0 - (c.x0 + c.w) : 0; },
   },
-  digitH: { key: 'digitH', own: true, name: 'Výška číslice', get: (L) => L.p.digitH },
-  segW: { key: 'segW', own: true, name: 'Tloušťka segmentu', get: (L) => L.p.segW },
-  caseW: { key: 'digitW', name: 'Celková šířka', get: (L) => L.caseW },
-  caseH: { key: 'digitH', name: 'Celková výška', get: (L) => L.caseH },
-  depth: { key: 'depth', own: true, name: 'Hloubka pouzdra', get: (L) => L.p.depth },
-  lidDepth: { key: 'lidDepth', own: true, name: 'Hloubka krabičky', get: (L) => L.p.lidDepth },
-  peg: { key: 'postSink', name: 'Čepy krabičky', get: (L) => postPeg(L.p).peg },
+  digitH: { key: 'digitH', own: true, name: T('Výška číslice', 'Digit height'), get: (L) => L.p.digitH },
+  segW: { key: 'segW', own: true, name: T('Tloušťka segmentu', 'Segment thickness'), get: (L) => L.p.segW },
+  caseW: { key: 'digitW', name: T('Celková šířka', 'Overall width'), get: (L) => L.caseW },
+  caseH: { key: 'digitH', name: T('Celková výška', 'Overall height'), get: (L) => L.caseH },
+  depth: { key: 'depth', own: true, name: T('Hloubka pouzdra', 'Case depth'), get: (L) => L.p.depth },
+  lidDepth: { key: 'lidDepth', own: true, name: T('Hloubka krabičky', 'Box depth'), get: (L) => L.p.lidDepth },
+  peg: { key: 'postSink', name: T('Čepy krabičky', 'Box pegs'), get: (L) => postPeg(L.p).peg },
   // otvory na zavěšení: rozteč 0 = automaticky, kóta pak vychází ze skutečné rozteče
-  khEdge: { key: 'keyholeGap', name: 'Otvor na zavěšení od levé hrany', get: (L) => L.keyholes[0][0], base: khGapNow, min: 12 },
-  khGap: { key: 'keyholeGap', own: true, name: 'Rozteč otvorů na zavěšení', get: (L) => L.keyholes[1][0] - L.keyholes[0][0], base: khGapNow, min: 12 },
-  khTop: { key: 'keyholeTop', own: true, name: 'Otvory na zavěšení od horní hrany', get: (L) => L.caseH - L.keyholes[L.keyholes.length - 1][1] },
+  khEdge: { key: 'keyholeGap', name: T('Otvor na zavěšení od levé hrany', 'Keyhole from the left edge'), get: (L) => L.keyholes[0][0], base: khGapNow, min: 12 },
+  khGap: { key: 'keyholeGap', own: true, name: T('Rozteč otvorů na zavěšení', 'Keyhole spacing'), get: (L) => L.keyholes[1][0] - L.keyholes[0][0], base: khGapNow, min: 12 },
+  khTop: { key: 'keyholeTop', own: true, name: T('Otvory na zavěšení od horní hrany', 'Keyholes from the top edge'), get: (L) => L.caseH - L.keyholes[L.keyholes.length - 1][1] },
 };
 // výchozí bod pro kolečko a dialog: zadaná rozteč, u automatické ta skutečná
 function khGapNow(L) {
@@ -1061,9 +1076,10 @@ function paramDef(key) {
 // atributy měnitelné kóty (text nebo tspan); sw = tah, který zvětší plochu pro myš
 function dimAttr(L, id, sw) {
   const b = DIM_BIND[id], d = paramDef(b.key), v = r2(b.get(L));
-  const how = b.own ? `kolečkem ±${fmt(d.step)} mm` : `kolečkem mění „${d.label}“ po ${fmt(d.step)} mm`;
+  const how = b.own ? T(`kolečkem ±${fmt(d.step)} mm`, `scroll wheel ±${fmt(d.step)} mm`)
+    : T(`kolečkem mění „${d.label}“ po ${fmt(d.step)} mm`, `scroll wheel changes “${d.label}” in ${fmt(d.step)} mm steps`);
   return { attr: ` data-dim="${id}" tabindex="0" role="spinbutton" aria-label="${b.name}" aria-valuenow="${v}" aria-valuetext="${fmt(v, 2)} mm" stroke-width="${sw.toFixed(2)}"`,
-    tip: `<title>${b.name} – ${how} (se Shiftem ×10), kliknutím zadáte přesnou hodnotu</title>` };
+    tip: `<title>${b.name} – ${how} ${T('(se Shiftem ×10), kliknutím zadáte přesnou hodnotu', '(×10 with Shift), click to enter an exact value')}</title>` };
 }
 
 // Kóty: řetězce vně obrysu (nahoře okraj, šířka číslice a mezera, nad nimi rozteč otvorů
@@ -1093,7 +1109,7 @@ function frontDims(L) {
       + (out ? arrow(ax, ay, ux, uy, fx) + arrow(bx, by, -ux, -uy, fx) : arrow(ax, ay, -ux, -uy, fx) + arrow(bx, by, ux, uy, fx));
   };
   const text = (pos, txt, id, tip) => {
-    if (!id) return `<text ${pos} class="fp-dim fix">${txt}<title>${tip || 'odvozený rozměr, nejde měnit'}</title></text>`;
+    if (!id) return `<text ${pos} class="fp-dim fix">${txt}<title>${tip || T('odvozený rozměr, nejde měnit', 'derived dimension, cannot be changed')}</title></text>`;
     const a = dimAttr(L, id, f * 0.9);
     return `<text ${pos} class="fp-dim ed"${a.attr}>${txt}${a.tip}</text>`;
   };
@@ -1150,7 +1166,7 @@ function frontDims(L) {
   if (kh.length) {
     const { r, slot, rs } = KEYHOLE, ys = Math.sqrt(r * r - rs * rs), ax = 1.5;
     for (const [kx, ky] of kh) {
-      s += `<path d="M${r2(kx - rs)} ${r2(Y(ky + slot))} V${r2(Y(ky + ys))} A${r} ${r} 0 1 0 ${r2(kx + rs)} ${r2(Y(ky + ys))} V${r2(Y(ky + slot))} A${rs} ${rs} 0 1 0 ${r2(kx - rs)} ${r2(Y(ky + slot))} Z" class="fp-post"><title>otvor na zavěšení</title></path>`;
+      s += `<path d="M${r2(kx - rs)} ${r2(Y(ky + slot))} V${r2(Y(ky + ys))} A${r} ${r} 0 1 0 ${r2(kx + rs)} ${r2(Y(ky + ys))} V${r2(Y(ky + slot))} A${rs} ${rs} 0 1 0 ${r2(kx - rs)} ${r2(Y(ky + slot))} Z" class="fp-post"><title>${T('otvor na zavěšení', 'keyhole')}</title></path>`;
       // osy od středu ven, aby se křížily čárkou; nahoru až k vynášecí čáře rozteče
       const yc = Y(ky);
       s += `<path d="M${r2(kx)} ${r2(yc)}V${r2(Y(ky + slot + rs + 1))}M${r2(kx)} ${r2(yc)}V${r2(Y(ky - r - ax))}M${r2(kx)} ${r2(yc)}H${r2(kx - r - ax)}M${r2(kx)} ${r2(yc)}H${r2(kx + r + ax)}" class="fp-axis"/>`;
@@ -1159,7 +1175,8 @@ function frontDims(L) {
     let x0 = 0;
     kh.forEach(([kx, ky], i) => {
       hdim(x0, kx, H + 2 * lv, x0 ? ky + slot + rs : H, ky + slot + rs, two ? (i ? 'khGap' : 'khEdge') : null,
-        'otvor je uprostřed každého horního dílu; dva otvory se zvolenou roztečí nastavíte v panelu (Zadní krabička → Rozteč otvorů)');
+        T('otvor je uprostřed každého horního dílu; dva otvory se zvolenou roztečí nastavíte v panelu (Zadní krabička → Rozteč otvorů)',
+          'there is a keyhole in the middle of each top piece; set two keyholes with a chosen spacing in the panel (Back box → Keyhole spacing)'));
       x0 = kx;
     });
     const [lx, ly] = kh[kh.length - 1];
@@ -1169,8 +1186,8 @@ function frontDims(L) {
   return { svg: `<g class="dims" style="--dw:${(f * 0.065).toFixed(3)}">${s}</g>`, pad: [m, top * lv + f + 3, top * lv + f + 3, 2 * lv + f + 3], f };
 }
 
-// 2–4 díly, 5 a víc dílů
-const dilu = (n) => (n >= 2 && n <= 4 ? 'díly' : 'dílů');
+// počet dílů slovy: 2–4 díly, 5 a víc dílů; anglicky pieces
+const dilu = (n) => T(n >= 2 && n <= 4 ? 'díly' : 'dílů', n === 1 ? 'piece' : 'pieces');
 // šířka textu popisku písmem stránky (v jednotkách výkresu při velikosti písma size)
 let measureCtx;
 function captionW(txt, size) {
@@ -1204,14 +1221,15 @@ function renderFront() {
   const sp = L.split;
   // popisek pod obrysem (a s kótami hloubka): části spojené „ · “ zalomené do šířky výkresu
   // kolem středu obrysu; písmo roste s výkresem, u úzkého se zmenší, aby se vešla každá část
-  const capParts = [`${fmt(W)} × ${fmt(H)} mm`, 'pohled zepředu', 'čísla = pořadí LED v řetězu', `čárkovaně lůžka, sloupky${L.usb ? ' a otvor pro kabel' : ''}`];
-  if (sp && sp.n > 1) capParts.push(`${sp.n} ${dilu(sp.n)}: ◇ zámek, ○ šroub, ▭ výřez pro vodiče`);
+  const capParts = [`${fmt(W)} × ${fmt(H)} mm`, T('pohled zepředu', 'front view'), T('čísla = pořadí LED v řetězu', 'numbers = LED order in the chain'),
+    L.usb ? T('čárkovaně lůžka, sloupky a otvor pro kabel', 'dashed: sockets, posts and cable hole') : T('čárkovaně lůžka a sloupky', 'dashed: sockets and posts')];
+  if (sp && sp.n > 1) capParts.push(`${sp.n} ${dilu(sp.n)}: ${T('◇ zámek, ○ šroub, ▭ výřez pro vodiče', '◇ dovetail, ○ screw, ▭ wire notch')}`);
   const pg = postPeg(p);
   // hloubka zepředu vidět není – aspoň jako text; ed obalí číslo, které jde měnit
   const depthParts = (ed) => !D ? [] : [
-    `hloubka: pouzdro ${ed('depth', `${fmt(p.depth)} mm`)}${p.lid ? ` + krabička ${ed('lidDepth', `${fmt(p.lidDepth)} mm`)} = ${fmt(p.depth + p.lidDepth)} mm` : ''}`,
-    ...(pg.peg ? [`čepy krabičky ${ed('peg', `${fmt(pg.peg, 2)} mm`)} do sloupků`] : []),
-    'kóty v mm',
+    `${T('hloubka: pouzdro', 'depth: case')} ${ed('depth', `${fmt(p.depth)} mm`)}${p.lid ? ` + ${T('krabička', 'box')} ${ed('lidDepth', `${fmt(p.lidDepth)} mm`)} = ${fmt(p.depth + p.lidDepth)} mm` : ''}`,
+    ...(pg.peg ? [T(`čepy krabičky ${ed('peg', `${fmt(pg.peg, 2)} mm`)} do sloupků`, `box pegs ${ed('peg', `${fmt(pg.peg, 2)} mm`)} into the posts`)] : []),
+    T('kóty v mm', 'dimensions in mm'),
   ];
   const depthText = depthParts((id, txt) => txt);
   const capW = 2 * Math.min(W / 2 + pl, W / 2 + pr) * 0.96;
@@ -1222,7 +1240,9 @@ function renderFront() {
   const capY = H + pb + 4 + cf, lh = cf * 1.4;
   // pod posledním řádkem místo pro stavový řádek v rohu náhledu
   const bottom = capY + lh * (capLines.length + depthLines.length - 1) + cf * 3;
-  let s = `<svg viewBox="${-pl} ${-pt} ${W + pl + pr} ${bottom + pt}" role="img" aria-label="Čelní pohled na displej ${p.layout} s pořadím LED${D ? ' a kótami' : ''}">`;
+  const aria = D ? T(`Čelní pohled na displej ${p.layout} s pořadím LED a kótami`, `Front view of the ${p.layout} display with LED order and dimensions`)
+    : T(`Čelní pohled na displej ${p.layout} s pořadím LED`, `Front view of the ${p.layout} display with LED order`);
+  let s = `<svg viewBox="${-pl} ${-pt} ${W + pl + pr} ${bottom + pt}" role="img" aria-label="${aria}">`;
   s += `<rect x="0" y="0" width="${W}" height="${H}" rx="${Math.min(2, p.chamfer * 2)}" class="fp-case"/>`;
   for (const po of L.posts) {
     const [x0, y0, x1, y1] = po.r;
@@ -1235,10 +1255,10 @@ function renderFront() {
   if (L.usb) {
     // u boku jen kus stěny krabičky, vzadu otvor v zadní desce
     const [x0, y0, x1, y1] = L.usb.bb.map((v, i) => Math.min(Math.max(v, 0), i % 2 ? H : W));
-    s += `<rect x="${x0}" y="${Y(y1)}" width="${x1 - x0}" height="${y1 - y0}" class="fp-usb"><title>otvor pro kabel ${USB_PORTS[L.usb.port]}</title></rect>`;
+    s += `<rect x="${x0}" y="${Y(y1)}" width="${x1 - x0}" height="${y1 - y0}" class="fp-usb"><title>${T('otvor pro kabel', 'cable hole:')} ${USB_PORTS[L.usb.port]}</title></rect>`;
   }
   for (const e of L.els) {
-    const tip = `<title>LED ${e.led}: pozice ${e.glyph + 1}, ${e.kind === 'seg' ? 'segment ' + e.name : e.kind === 'sym' ? 'symbol ' + e.name : e.name}</title>`;
+    const tip = `<title>LED ${e.led}: ${T('pozice', 'position')} ${e.glyph + 1}, ${e.kind === 'seg' ? 'segment ' + e.name : e.kind === 'sym' ? 'symbol ' + e.name : dotLabel(e)}</title>`;
     if (e.kind === 'sym') {
       s += `<g>${tip}<polygon points="${pts(e.poly)}" class="fp-win"/>`;
       for (const pl of e.lines) s += `<polyline points="${pts(pl)}" class="fp-sym" stroke-width="${p.symStroke}"/>`;
@@ -1269,14 +1289,14 @@ function renderFront() {
       for (const q of J.spots) {
         const [qx, qy] = jointPoint(J, 0, q.s);
         s += q.type === 'screw'
-          ? `<circle cx="${qx}" cy="${Y(qy)}" r="2.6" class="fp-joint"><title>šroub M3${q.zone === 'back' ? ' (vzadu)' : ''}</title></circle>`
-          : `<rect x="${qx - 2.6}" y="${Y(qy) - 2.6}" width="5.2" height="5.2" transform="rotate(45 ${qx} ${Y(qy)})" class="fp-joint"><title>rybinový zámek${q.zone === 'back' ? ' (vzadu)' : ''}</title></rect>`;
+          ? `<circle cx="${qx}" cy="${Y(qy)}" r="2.6" class="fp-joint"><title>${T('šroub M3', 'M3 screw')}${q.zone === 'back' ? T(' (vzadu)', ' (at the back)') : ''}</title></circle>`
+          : `<rect x="${qx - 2.6}" y="${Y(qy) - 2.6}" width="5.2" height="5.2" transform="rotate(45 ${qx} ${Y(qy)})" class="fp-joint"><title>${T('rybinový zámek', 'dovetail')}${q.zone === 'back' ? T(' (vzadu)', ' (at the back)') : ''}</title></rect>`;
       }
       for (const t of J.notches) {
         const [qx, qy] = jointPoint(J, 0, t), w = p.notchW;
         s += J.dir === 'v'
-          ? `<rect x="${qx - 1.5}" y="${Y(qy) - w / 2}" width="3" height="${w}" class="fp-notch"><title>výřez pro vodiče</title></rect>`
-          : `<rect x="${qx - w / 2}" y="${Y(qy) - 1.5}" width="${w}" height="3" class="fp-notch"><title>výřez pro vodiče</title></rect>`;
+          ? `<rect x="${qx - 1.5}" y="${Y(qy) - w / 2}" width="3" height="${w}" class="fp-notch"><title>${T('výřez pro vodiče', 'wire notch')}</title></rect>`
+          : `<rect x="${qx - w / 2}" y="${Y(qy) - 1.5}" width="${w}" height="3" class="fp-notch"><title>${T('výřez pro vodiče', 'wire notch')}</title></rect>`;
       }
     }
     for (const q of sp.pieces) s += `<text x="${q.r[0] + 4}" y="${Y(q.r[3]) + 9}" font-size="7" class="fp-piece">${q.k}</text>`;
@@ -1304,15 +1324,15 @@ function renderFacts() {
   const p = L.p, n = L.els.length;
   const amps = (n * 0.06);
   const rows = [
-    ['Pouzdro', `<b>${fmt(L.caseW)} × ${fmt(L.caseH)} × ${fmt(p.depth)}</b> mm`],
-    ...(p.lid ? [['Krabička', `<b>${fmt(L.caseW)} × ${fmt(L.caseH)} × ${fmt(p.lidDepth)}</b> mm`]] : []),
-    ['Moduly LED', `<b>${n}</b> × WS2812B, kulatá deska ⌀ 10 mm`],
-    ['Napájení', `5 V, až <b>${fmt(amps, 2)}</b> A při plném bílém jasu`],
-    ['Šrouby', `<b>${L.posts.length}</b> × M3 × ${lidScrewLen(p).join('–')} mm${jointScrews(L) ? ` a <b>${jointScrews(L)}</b> × M3 × 16 s maticí na spoje dílů` : ''}`],
-    ['Tisk', L.split && L.split.n > 1
-      ? `<b>${L.split.n}</b> ${dilu(L.split.n)} (${L.split.nx} × ${L.split.ny}), největší ${fmt(Math.max(...L.split.pieces.map((q) => q.r[2] - q.r[0])))} × ${fmt(Math.max(...L.split.pieces.map((q) => q.r[3] - q.r[1])))} mm`
-      : `jeden kus, vejde se na plochu ${fmt(p.bedW)} × ${fmt(p.bedH)} mm`],
-    ['Číslice', `${fmt(p.digitW)} × ${fmt(p.digitH)} mm, segment ${fmt(p.segW)} mm, ${((n) => (n === n.toUpperCase() ? n : n.toLowerCase()))((STYLES.find((s) => s[0] === p.segStyle) || STYLES[0])[1])}${p.slant ? `, sklon ${fmt(p.slant)}°` : ''}`],
+    [T('Pouzdro', 'Case'), `<b>${fmt(L.caseW)} × ${fmt(L.caseH)} × ${fmt(p.depth)}</b> mm`],
+    ...(p.lid ? [[T('Krabička', 'Back box'), `<b>${fmt(L.caseW)} × ${fmt(L.caseH)} × ${fmt(p.lidDepth)}</b> mm`]] : []),
+    [T('Moduly LED', 'LED modules'), T(`<b>${n}</b> × WS2812B, kulatá deska ⌀ 10 mm`, `<b>${n}</b> × WS2812B, round ⌀ 10 mm board`)],
+    [T('Napájení', 'Power'), T(`5 V, až <b>${fmt(amps, 2)}</b> A při plném bílém jasu`, `5 V, up to <b>${fmt(amps, 2)}</b> A at full white brightness`)],
+    [T('Šrouby', 'Screws'), `<b>${L.posts.length}</b> × M3 × ${lidScrewLen(p).join('–')} mm${jointScrews(L) ? T(` a <b>${jointScrews(L)}</b> × M3 × 16 s maticí na spoje dílů`, ` and <b>${jointScrews(L)}</b> × M3 × 16 with nuts for the joints`) : ''}`],
+    [T('Tisk', 'Printing'), L.split && L.split.n > 1
+      ? `<b>${L.split.n}</b> ${dilu(L.split.n)} (${L.split.nx} × ${L.split.ny}), ${T('největší', 'largest')} ${fmt(Math.max(...L.split.pieces.map((q) => q.r[2] - q.r[0])))} × ${fmt(Math.max(...L.split.pieces.map((q) => q.r[3] - q.r[1])))} mm`
+      : T(`jeden kus, vejde se na plochu ${fmt(p.bedW)} × ${fmt(p.bedH)} mm`, `one piece, fits on a ${fmt(p.bedW)} × ${fmt(p.bedH)} mm bed`)],
+    [T('Číslice', 'Digits'), `${fmt(p.digitW)} × ${fmt(p.digitH)} mm, segment ${fmt(p.segW)} mm, ${((n) => (n === n.toUpperCase() ? n : n.toLowerCase()))((STYLES.find((s) => s[0] === p.segStyle) || STYLES[0])[1])}${p.slant ? `, ${T('sklon', 'slant')} ${fmt(p.slant)}°` : ''}`],
   ];
   $('#facts').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
 }
@@ -1335,9 +1355,12 @@ let dlCap = null;
 const inViewer = !!(window.claude && typeof window.claude.use === 'function');
 
 function slug(s) {
-  return String(s).replace(/:/g, '-').replace(/[.,]/g, 'p').replace(/°/g, 'st').replace(/^-/, 'm').replace(/\s+/g, '_').replace(/[^0-9A-Za-z_p-]/g, '') || 'displej';
+  return String(s).replace(/:/g, '-').replace(/[.,]/g, 'p').replace(/°/g, T('st', 'deg')).replace(/^-/, 'm').replace(/\s+/g, '_').replace(/[^0-9A-Za-z_p-]/g, '') || T('displej', 'display');
 }
 const baseName = () => `segmentovka_${slug(built ? built.params.layout : params.layout)}`;
+// názvy dílů v souborech (bez diakritiky) a v 3MF
+const FILE = T({ case: 'pouzdro', diffuser: 'difuzory', lid: 'krabicka', map: 'led-mapa', params: 'parametry', readme: 'CTIMNE.txt' },
+  { case: 'case', diffuser: 'diffusers', lid: 'backbox', map: 'led-map', params: 'params', readme: 'README.txt' });
 
 async function make3mf() {
   const { L: lay, R } = built;
@@ -1345,19 +1368,24 @@ async function make3mf() {
   if (R.pieces) {
     // díly od sebe, aby se nepřekrývaly; slicer je pak rozmístí na podložky
     for (const q of R.pieces) {
-      groups.push({ name: `Díl ${q.k}`, parts: [{ name: `Pouzdro ${q.k}`, mesh: q.case }, { name: `Difuzory ${q.k}`, mesh: q.diffuser }], offset: [-q.i * 20, q.j * 20, 0] });
+      groups.push({ name: `${T('Díl', 'Piece')} ${q.k}`, parts: [{ name: `${T('Pouzdro', 'Case')} ${q.k}`, mesh: q.case }, { name: `${T('Difuzory', 'Diffusers')} ${q.k}`, mesh: q.diffuser }], offset: [-q.i * 20, q.j * 20, 0] });
     }
     for (const q of R.pieces) {
-      if (q.lid) groups.push({ name: `Krabička ${q.k}`, parts: [{ name: `Krabička ${q.k}`, mesh: lidToPrint(q.lid, lay) }], offset: [-q.i * 20, lay.caseH + 30 + (lay.split.ny - 1 - q.j) * 20, 0] });
+      const name = `${T('Krabička', 'Back box')} ${q.k}`;
+      if (q.lid) groups.push({ name, parts: [{ name, mesh: lidToPrint(q.lid, lay) }], offset: [-q.i * 20, lay.caseH + 30 + (lay.split.ny - 1 - q.j) * 20, 0] });
     }
   } else {
-    groups.push({ name: 'Pouzdro s difuzory', parts: [{ name: 'Pouzdro', mesh: R.case }, { name: 'Difuzory', mesh: R.diffuser }] });
-    if (R.lid) groups.push({ name: 'Zadní krabička', parts: [{ name: 'Zadní krabička', mesh: lidToPrint(R.lid, lay) }], offset: [0, lay.caseH + 10, 0] });
+    groups.push({ name: T('Pouzdro s difuzory', 'Case with diffusers'), parts: [{ name: T('Pouzdro', 'Case'), mesh: R.case }, { name: T('Difuzory', 'Diffusers'), mesh: R.diffuser }] });
+    const name = T('Zadní krabička', 'Back box');
+    if (R.lid) groups.push({ name, parts: [{ name, mesh: lidToPrint(R.lid, lay) }], offset: [0, lay.caseH + 10, 0] });
   }
   return zip(threeMF({ title: `Segmentovka ${lay.p.layout}`, groups }));
 }
 
 function readme(lay) {
+  return T(readmeCs(lay), readmeEn(lay));
+}
+function readmeCs(lay) {
   const p = lay.p;
   return [
     `Segmentovka – rozložení „${p.layout}“`,
@@ -1372,6 +1400,7 @@ function readme(lay) {
     `- ${lay.els.length} × modul WS2812B (kulatá deska ⌀ 10 mm, lůžko ⌀ ${fmt(p.modD, 2)} mm)`,
     `- ${lay.posts.length} × šroub M3 × ${lidScrewLen(p).join('–')} mm (do otvorů ⌀ ${fmt(p.screwD, 2)} mm)`,
     jointScrews(lay) ? `- ${jointScrews(lay)} × šroub M3 × 16 s maticí na spoje dílů` : null,
+    `- zdroj 5 V, až ${fmt(lay.els.length * 0.06, 2)} A při plném bílém jasu`,
     ...(lay.split && lay.split.n > 1 ? [
       '',
       `Dělení: ${lay.split.n} ${dilu(lay.split.n)} (${lay.split.nx} × ${lay.split.ny}), číslování zleva shora v čelním pohledu.`,
@@ -1379,7 +1408,6 @@ function readme(lay) {
       '  pak se díly stáhnou šrouby M3 s maticí; vodiče vedou výřezy ve spojových stěnách otevřenými dozadu',
       '- difuzory v *_difuzory.stl jsou celé (přes spoje drží díly u sebe); v 3MF jsou rozdělené podle dílů pro tisk s AMS',
     ] : []),
-    `- zdroj 5 V, až ${fmt(lay.els.length * 0.06, 2)} A při plném bílém jasu`,
     '',
     'Soubory:',
     lay.split && lay.split.n > 1 ? '- *_pouzdro_N.stl, *_krabicka_N.stl – díly pouzdra a krabičky, *_difuzory.stl – všechny difuzory' : '- *_pouzdro.stl, *_difuzory.stl, *_krabicka.stl – jednotlivé díly',
@@ -1389,22 +1417,54 @@ function readme(lay) {
     '',
   ].filter((l) => l !== null).join('\n');
 }
+function readmeEn(lay) {
+  const p = lay.p, sp = lay.split && lay.split.n > 1 ? lay.split : null;
+  return [
+    `Segmentovka – layout “${p.layout}”`,
+    '',
+    `Case: ${fmt(lay.caseW)} × ${fmt(lay.caseH)} × ${fmt(p.depth)} mm, print face down.`,
+    p.lid ? `Back box: ${fmt(lay.caseW)} × ${fmt(lay.caseH)} × ${fmt(p.lidDepth)} mm, print with the back plate down. Cable hole: ${lay.usb ? USB_PORTS[lay.usb.port] : USB_PORTS.none}.` : '',
+    p.lid && postPeg(p).peg ? `The case posts are ${fmt(postPeg(p).sink)} mm shorter; the pegs of the back box fit into them (clearance ${fmt(p.postFit, 2)} mm).` : null,
+    p.diffuser ? `Diffusers: ${lay.els.length} pcs, ${fmt(p.diffT)} mm thick, clearance ${fmt(p.diffClear, 2)} mm. White or translucent filament.` : '',
+    !lay.stencil && lay.els.some((e) => e.kind === 'sym') ? 'The symbol font is continuous: the diffuser plate holds the insides of the letters. Print the case and the diffusers together from the same kind of material (e.g. PLA + PLA).' : null,
+    '',
+    'Parts:',
+    `- ${lay.els.length} × WS2812B module (round ⌀ 10 mm board, socket ⌀ ${fmt(p.modD, 2)} mm)`,
+    `- ${lay.posts.length} × M3 × ${lidScrewLen(p).join('–')} mm screw (into ⌀ ${fmt(p.screwD, 2)} mm holes)`,
+    jointScrews(lay) ? `- ${jointScrews(lay)} × M3 × 16 screw with nut for the joints between pieces` : null,
+    `- 5 V power supply, up to ${fmt(lay.els.length * 0.06, 2)} A at full white brightness`,
+    ...(sp ? [
+      '',
+      `Splitting: ${sp.n} pieces (${sp.nx} × ${sp.ny}), numbered from the top left in the front view.`,
+      '- the pieces have walls at each joint; the dovetails slide together from the back (the piece with the tongue goes into the groove from above),',
+      '  then the pieces are pulled together with M3 screws and nuts; the wires run through notches in the joint walls that are open to the back',
+      '- the diffusers in *_diffusers.stl are whole (across the joints they hold the pieces together); in the 3MF they are split per piece for printing with an AMS',
+    ] : []),
+    '',
+    'Files:',
+    sp ? '- *_case_N.stl, *_backbox_N.stl – pieces of the case and the back box, *_diffusers.stl – all diffusers' : '- *_case.stl, *_diffusers.stl, *_backbox.stl – the individual parts',
+    '- *.3mf – the case and the diffusers as two parts of one object (for printing with an AMS) + the back box',
+    '- *_led-map.h – the LED order in the chain for the firmware',
+    '- *_params.json – can be loaded back into the generator (Load parameters…)',
+    '',
+  ].filter((l) => l !== null).join('\n');
+}
 
 async function buildZip() {
   const { L: lay, R } = built;
   const base = baseName();
   const files = [];
-  if (R.case) files.push({ name: `${base}_pouzdro.stl`, data: stl(R.case, 'pouzdro') });
+  if (R.case) files.push({ name: `${base}_${FILE.case}.stl`, data: stl(R.case, FILE.case) });
   for (const q of R.pieces || []) {
-    files.push({ name: `${base}_pouzdro_${q.k}.stl`, data: stl(q.case, `pouzdro ${q.k}`) });
-    if (q.lid) files.push({ name: `${base}_krabicka_${q.k}.stl`, data: stl(lidToPrint(q.lid, lay), `krabicka ${q.k}`) });
+    files.push({ name: `${base}_${FILE.case}_${q.k}.stl`, data: stl(q.case, `${FILE.case} ${q.k}`) });
+    if (q.lid) files.push({ name: `${base}_${FILE.lid}_${q.k}.stl`, data: stl(lidToPrint(q.lid, lay), `${FILE.lid} ${q.k}`) });
   }
-  if (R.diffuser) files.push({ name: `${base}_difuzory.stl`, data: stl(R.diffuser, 'difuzory') });
-  if (R.lid) files.push({ name: `${base}_krabicka.stl`, data: stl(lidToPrint(R.lid, lay), 'krabicka') });
+  if (R.diffuser) files.push({ name: `${base}_${FILE.diffuser}.stl`, data: stl(R.diffuser, FILE.diffuser) });
+  if (R.lid) files.push({ name: `${base}_${FILE.lid}.stl`, data: stl(lidToPrint(R.lid, lay), FILE.lid) });
   files.push({ name: `${base}.3mf`, data: await make3mf() });
-  files.push({ name: `${base}_led-mapa.h`, data: ledMap(lay) + '\n' });
-  files.push({ name: `${base}_parametry.json`, data: JSON.stringify(built.params, null, 2) + '\n' });
-  files.push({ name: 'CTIMNE.txt', data: readme(lay) });
+  files.push({ name: `${base}_${FILE.map}.h`, data: ledMap(lay) + '\n' });
+  files.push({ name: `${base}_${FILE.params}.json`, data: JSON.stringify(built.params, null, 2) + '\n' });
+  files.push({ name: FILE.readme, data: readme(lay) });
   return zip(files);
 }
 
@@ -1431,22 +1491,26 @@ function exportMode() {
   const capMode = inViewer && dlCap;
   for (const b of document.querySelectorAll('[data-dl]')) b.hidden = !!capMode;
   $('#export-note').textContent = capMode
-    ? 'Uloží ZIP se všemi díly: STL, 3MF (pouzdro s difuzory jako dva díly jednoho objektu), mapu LED a parametry.'
-    : 'ZIP obsahuje STL všech dílů, 3MF (pouzdro s difuzory jako dva díly jednoho objektu), mapu LED a parametry.';
+    ? T('Uloží ZIP se všemi díly: STL, 3MF (pouzdro s difuzory jako dva díly jednoho objektu), mapu LED a parametry.',
+      'Saves a ZIP with all parts: STL, 3MF (the case with diffusers as two parts of one object), the LED map and the parameters.')
+    : T('ZIP obsahuje STL všech dílů, 3MF (pouzdro s difuzory jako dva díly jednoho objektu), mapu LED a parametry.',
+      'The ZIP contains STL files of all parts, a 3MF (the case with diffusers as two parts of one object), the LED map and the parameters.');
 }
 
 async function save(name, data) {
   if (inViewer && dlCap) {
     try {
       await dlCap.save({ filename: name, data: new Blob([data]) });
-      setExportMsg(`Uloženo: ${name}`);
+      setExportMsg(T(`Uloženo: ${name}`, `Saved: ${name}`));
     } catch (e) {
       const code = e && e.code;
-      setExportMsg(code === 'declined' ? 'Ukládání zrušeno.' : code === 'rate_limited' ? 'Ukládání už čeká na potvrzení, zkuste to za chvíli.' : `Soubor se nepodařilo uložit (${(e && e.message) || code || 'neznámá chyba'}).`);
+      setExportMsg(code === 'declined' ? T('Ukládání zrušeno.', 'Saving canceled.')
+        : code === 'rate_limited' ? T('Ukládání už čeká na potvrzení, zkuste to za chvíli.', 'A save is already waiting for confirmation, try again in a moment.')
+          : T(`Soubor se nepodařilo uložit (${(e && e.message) || code || 'neznámá chyba'}).`, `Could not save the file (${(e && e.message) || code || 'unknown error'}).`));
     }
   } else {
     blobDownload(data, name);
-    setExportMsg(`Stahuji ${name}`);
+    setExportMsg(T(`Stahuji ${name}`, `Downloading ${name}`));
   }
 }
 
@@ -1454,9 +1518,9 @@ $('#dl-zip').addEventListener('click', async () => {
   if (!built) return;
   const b = $('#dl-zip');
   b.disabled = true;
-  setExportMsg('Připravuji ZIP…');
+  setExportMsg(T('Připravuji ZIP…', 'Preparing the ZIP…'));
   try { await save(`${baseName()}.zip`, await buildZip()); }
-  catch (e) { setExportMsg(`Export selhal: ${(e && e.message) || e}`); }
+  catch (e) { setExportMsg(T(`Export selhal: ${(e && e.message) || e}`, `Export failed: ${(e && e.message) || e}`)); }
   b.disabled = false;
 });
 for (const b of document.querySelectorAll('[data-dl]')) {
@@ -1464,20 +1528,20 @@ for (const b of document.querySelectorAll('[data-dl]')) {
     if (!built) return;
     const k = b.dataset.dl, base = baseName(), { L: lay, R } = built;
     if (k === '3mf') return save(`${base}.3mf`, await make3mf());
-    const names = { case: 'pouzdro', diffuser: 'difuzory', lid: 'krabicka' };
     const mesh = k === 'lid' ? lidToPrint(R.lid, lay) : R[k];
-    save(`${base}_${names[k]}.stl`, stl(mesh, names[k]));
+    save(`${base}_${FILE[k]}.stl`, stl(mesh, FILE[k]));
   });
 }
 $('#copy-map').addEventListener('click', async () => {
   const text = $('#ledmap').textContent;
-  try { await navigator.clipboard.writeText(text); $('#copy-map').textContent = 'Zkopírováno'; }
+  const label = $('#copy-map').textContent;
+  try { await navigator.clipboard.writeText(text); $('#copy-map').textContent = T('Zkopírováno', 'Copied'); }
   catch (_) {
     const r = document.createRange(); r.selectNodeContents($('#ledmap'));
     const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
-    $('#copy-map').textContent = 'Označeno, zkopírujte Ctrl+C';
+    $('#copy-map').textContent = T('Označeno, zkopírujte Ctrl+C', 'Selected, copy with Ctrl+C');
   }
-  setTimeout(() => { $('#copy-map').textContent = 'Zkopírovat'; }, 2200);
+  setTimeout(() => { $('#copy-map').textContent = label; }, 2200);
 });
 
 // ---------- záložky a přepínače ----------
@@ -1530,7 +1594,7 @@ function syncDimUndo() {
   if (!b) return;
   const ed = dimEdited();
   b.hidden = !$('#v-dims').checked || !ed.size;
-  b.textContent = ed.size > 1 ? `Vrátit změny kót (${ed.size})` : 'Vrátit změnu kóty';
+  b.textContent = ed.size > 1 ? T(`Vrátit změny kót (${ed.size})`, `Undo dimension changes (${ed.size})`) : T('Vrátit změnu kóty', 'Undo dimension change');
   b.title = [...ed].map(([k, e]) => `${paramDef(k).label}: ${fmt(e.now, 2)} → ${fmt(e.orig, 2)} mm`).join('\n');
 }
 // krok parametru kóty o n kroků (z popisu parametru v GROUPS), v jeho rozsahu
@@ -1571,7 +1635,7 @@ function dimFailHint(b, target) {
     const g0 = b.get(at(v0)), k = (b.get(at(v0 + st)) - g0) / st;
     if (!k) return '';
     const fresh = at(v0 + (target - g0) / k).warnings.filter((x) => !L.warnings.includes(x));
-    const w = fresh.find((x) => x.includes('zavěšení')) || fresh[0];
+    const w = fresh.find((x) => /zavěšení|keyhole/i.test(x)) || fresh[0];
     return w ? ` ${w}` : '';
   } catch (_) { return ''; }
 }
@@ -1628,14 +1692,15 @@ function openDimPop(el) {
   const d = paramDef(b.key), pop = $('#dim-pop'), inp = $('#dim-val');
   popId = id;
   $('#dim-name').textContent = b.name;
-  inp.value = String(r2(b.get(L))).replace('.', ',');
-  const auto = b.base && !params[b.key] ? ' Teď se volí automaticky, zadáním se zafixuje.' : '';
-  dimNote(b.own ? `Rozsah ${fmt(dimMin(b))}–${fmt(d.max)} mm.${auto}` : `Změní se parametr „${d.label}“ (teď ${fmt(dimBase(b), 2)} mm).${auto}`);
+  inp.value = dec(r2(b.get(L)));
+  const auto = b.base && !params[b.key] ? T(' Teď se volí automaticky, zadáním se zafixuje.', ' Currently automatic, entering a value fixes it.') : '';
+  dimNote(b.own ? T(`Rozsah ${fmt(dimMin(b))}–${fmt(d.max)} mm.`, `Range ${fmt(dimMin(b))}–${fmt(d.max)} mm.`) + auto
+    : T(`Změní se parametr „${d.label}“ (teď ${fmt(dimBase(b), 2)} mm).`, `Changes the parameter “${d.label}” (now ${fmt(dimBase(b), 2)} mm).`) + auto);
   const e = dimEdited().get(b.key), rv = $('#dim-revert');
   rv.hidden = !e;
   if (e) {
-    rv.textContent = `Vrátit ${fmt(e.orig, 2)} mm`;
-    rv.title = `vrátí parametr „${d.label}“ na hodnotu před změnami v kótách`;
+    rv.textContent = T(`Vrátit ${fmt(e.orig, 2)} mm`, `Revert to ${fmt(e.orig, 2)} mm`);
+    rv.title = T(`vrátí parametr „${d.label}“ na hodnotu před změnami v kótách`, `sets “${d.label}” back to its value before the dimension changes`);
   }
   pop.hidden = false;
   const r = el.getBoundingClientRect(), pw = pop.offsetWidth, ph = pop.offsetHeight;
@@ -1660,11 +1725,12 @@ $('#dim-pop').addEventListener('submit', (e) => {
   const d = paramDef(b.key);
   const t = Number($('#dim-val').value.replace(/\s/g, '').replace(',', '.'));
   const fail = (msg) => { dimNote(msg, true); $('#dim-val').focus(); };
-  if ($('#dim-val').value.trim() === '' || !Number.isFinite(t) || t < 0) return fail('Zadejte rozměr v milimetrech, třeba 42,5.');
+  if ($('#dim-val').value.trim() === '' || !Number.isFinite(t) || t < 0) return fail(T('Zadejte rozměr v milimetrech, třeba 42,5.', 'Enter a size in millimeters, e.g. 42.5.'));
   const v = solveDim(b, t);
-  if (v == null) return fail(`Na tuto hodnotu kótu nastavit nejde.${dimFailHint(b, t)}`);
+  if (v == null) return fail(T('Na tuto hodnotu kótu nastavit nejde.', 'The dimension cannot be set to this value.') + dimFailHint(b, t));
   if (v < dimMin(b) - 1e-9 || v > d.max + 1e-9) {
-    return fail(`Parametr „${d.label}“ by musel být ${fmt(v, 2)} mm, povolený rozsah je ${fmt(dimMin(b))}–${fmt(d.max)} mm.`);
+    return fail(T(`Parametr „${d.label}“ by musel být ${fmt(v, 2)} mm, povolený rozsah je ${fmt(dimMin(b))}–${fmt(d.max)} mm.`,
+      `The parameter “${d.label}” would have to be ${fmt(v, 2)} mm, the allowed range is ${fmt(dimMin(b))}–${fmt(d.max)} mm.`));
   }
   closeDimPop();
   setParam(b.key, v);

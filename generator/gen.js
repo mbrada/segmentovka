@@ -13,6 +13,7 @@
 
 import { layoutSymbol, strokePolygons, convexHull } from './symbols.js';
 import { computeSplit, jointPoint, JOINT } from './split.js';
+import { T, dec } from './i18n.js';
 
 export const DEFAULTS = {
   layout: '88:88',
@@ -50,11 +51,14 @@ export const DEFAULTS = {
 // Otvor pro kabel v čelním pohledu: v boku krabičky uprostřed strany, nebo v zadní stěně
 // v mřížce 3 × 3 (back-<svisle><vodorovně>: t/b = nahoře/dole, l/r = vlevo/vpravo, c = střed).
 export const USB_PORTS = {
-  right: 'v boku vpravo', left: 'v boku vlevo', bottom: 'v boku dole', top: 'v boku nahoře',
-  'back-tl': 'vzadu vlevo nahoře', 'back-t': 'vzadu nahoře', 'back-tr': 'vzadu vpravo nahoře',
-  'back-l': 'vzadu vlevo', 'back-c': 'vzadu uprostřed', 'back-r': 'vzadu vpravo',
-  'back-bl': 'vzadu vlevo dole', 'back-b': 'vzadu dole', 'back-br': 'vzadu vpravo dole',
-  none: 'bez otvoru',
+  right: T('v boku vpravo', 'right side'), left: T('v boku vlevo', 'left side'),
+  bottom: T('v boku dole', 'bottom side'), top: T('v boku nahoře', 'top side'),
+  'back-tl': T('vzadu vlevo nahoře', 'back, top left'), 'back-t': T('vzadu nahoře', 'back, top'),
+  'back-tr': T('vzadu vpravo nahoře', 'back, top right'), 'back-l': T('vzadu vlevo', 'back, left'),
+  'back-c': T('vzadu uprostřed', 'back, center'), 'back-r': T('vzadu vpravo', 'back, right'),
+  'back-bl': T('vzadu vlevo dole', 'back, bottom left'), 'back-b': T('vzadu dole', 'back, bottom'),
+  'back-br': T('vzadu vpravo dole', 'back, bottom right'),
+  none: T('bez otvoru', 'no hole'),
 };
 
 // Čepy sloupků: o kolik je sloupek pouzdra nižší a jak dlouhý čep na něj z krabičky dosedá
@@ -344,7 +348,10 @@ export function computeLayout(params) {
   const k = Math.tan((p.slant * Math.PI) / 180);
   const shear = ([x, y]) => [x + (y - H / 2) * k, y];
   const warnings = [];
-  if (bad.length) warnings.push(`Neznámé znaky v rozložení: ${bad.map((c) => `„${c}“`).join(', ')} (ignoruji je).`);
+  if (bad.length) {
+    const list = bad.map((c) => T(`„${c}“`, `“${c}”`)).join(', ');
+    warnings.push(T(`Neznámé znaky v rozložení: ${list} (ignoruji je).`, `Unknown characters in the layout: ${list} (ignored).`));
+  }
 
   const rOut = p.modD / 2 + p.ringWall;
   // šablonové přerušení písma symbolů: automaticky jen tehdy, když vnitřky písmen nedrží
@@ -368,7 +375,9 @@ export function computeLayout(params) {
         if (bb > room && room > 1) syms = lay((p.symH * room) / bb);
       }
       syms.forEach((sy, j) => {
-        if (sy.bad.length) warnings.push(`Symbol [${g.items[j]}]: znaky ${sy.bad.map((c) => `„${c}“`).join(', ')} písmo nemá (vynechávám je).`);
+        if (!sy.bad.length) return;
+        const list = sy.bad.map((c) => T(`„${c}“`, `“${c}”`)).join(', ');
+        warnings.push(T(`Symbol [${g.items[j]}]: znaky ${list} písmo nemá (vynechávám je).`, `Symbol [${g.items[j]}]: the font has no ${list} (left out).`));
       });
       cw = Math.max(Math.max(...syms.map((sy) => sy.width)) + p.symStroke + 2 * p.symPad, 2 * rOut + 1);
     }
@@ -438,8 +447,10 @@ export function computeLayout(params) {
   }
 
   if (p.gap < 0.8 && els.some((e) => e.kind === 'seg'))
-    warnings.push(`Mezera mezi segmenty ${String(Math.round(p.gap * 100) / 100).replace('.', ',')} mm je tenčí než 0,8 mm – přepážka mezi difuzory v čele se tryskou 0,4 mm nemusí vytisknout.`);
-  if (tooShort) warnings.push('Některé segmenty se do číslice nevejdou – zvětšete číslici, nebo zmenšete tloušťku segmentu či mezeru.');
+    warnings.push(T(`Mezera mezi segmenty ${dec(Math.round(p.gap * 100) / 100)} mm je tenčí než 0,8 mm – přepážka mezi difuzory v čele se tryskou 0,4 mm nemusí vytisknout.`,
+      `The segment gap of ${dec(Math.round(p.gap * 100) / 100)} mm is thinner than 0.8 mm – a 0.4 mm nozzle may not print the wall between the diffusers in the front face.`));
+  if (tooShort) warnings.push(T('Některé segmenty se do číslice nevejdou – zvětšete číslici, nebo zmenšete tloušťku segmentu či mezeru.',
+    'Some segments do not fit into the digit – make the digit larger, or reduce the segment thickness or gap.'));
 
   // ohraničení obsahu: všechny tvary + rohy buněk (kvůli mezerám na krajích)
   let minX = Infinity, maxX = -Infinity, minY = 0, maxY = H;
@@ -511,12 +522,17 @@ export function computeLayout(params) {
   for (let i = 0; i < els.length; i++)
     for (let j = i + 1; j < els.length; j++)
       minD = Math.min(minD, Math.hypot(els[i].c[0] - els[j].c[0], els[i].c[1] - els[j].c[1]));
-  if (minD < 2 * rOut) warnings.push(`Lůžka sousedních LED se překrývají (vzdálenost středů ${minD.toFixed(1)} mm < ${(2 * rOut).toFixed(1)} mm). Zvětšete mezery.`);
+  if (minD < 2 * rOut) {
+    warnings.push(T(`Lůžka sousedních LED se překrývají (vzdálenost středů ${minD.toFixed(1)} mm < ${(2 * rOut).toFixed(1)} mm). Zvětšete mezery.`,
+      `Sockets of neighboring LEDs overlap (center distance ${minD.toFixed(1)} mm < ${(2 * rOut).toFixed(1)} mm). Increase the gaps.`));
+  }
   const z = zStack(p);
-  if (z.tubeEnd < p.front + 3) warnings.push('Pouzdro je na tyto rozměry lůžka příliš mělké – zvětšete hloubku.');
-  if (!els.length) warnings.push('Rozložení neobsahuje žádný segment.');
-  if (!stencil && !inPlace && els.some((e) => e.kind === 'sym'))
-    warnings.push('Písmo symbolů je bez šablonových přerušení, ale difuzory se netisknou na místě (vůle 0) – vnitřky písmen (O, °, %, P…) z masky vypadnou.');
+  if (z.tubeEnd < p.front + 3) warnings.push(T('Pouzdro je na tyto rozměry lůžka příliš mělké – zvětšete hloubku.', 'The case is too shallow for these socket dimensions – increase the depth.'));
+  if (!els.length) warnings.push(T('Rozložení neobsahuje žádný segment.', 'The layout contains no segments.'));
+  if (!stencil && !inPlace && els.some((e) => e.kind === 'sym')) {
+    warnings.push(T('Písmo symbolů je bez šablonových přerušení, ale difuzory se netisknou na místě (vůle 0) – vnitřky písmen (O, °, %, P…) z masky vypadnou.',
+      'The symbol font has no stencil bridges, but the diffusers are not printed in place (clearance 0) – the insides of letters (O, °, %, P…) will fall out of the mask.'));
+  }
 
   // dělení na díly (když se pouzdro nevejde na tiskovou plochu)
   const outer = els.map((e) => offsetConvex(e.poly, (e.kind === 'sym' ? 0 : -p.recessInset) + p.tubeWall + 0.5));
@@ -540,18 +556,25 @@ export function computeLayout(params) {
 // k malému otvoru, na kterém pouzdro visí (kreslí ji i čelní pohled).
 export const KEYHOLE = { r: 4.2, slot: 10, rs: 2.2 };
 const khBox = ([kx, ky]) => [kx - KEYHOLE.r, ky - KEYHOLE.r, kx + KEYHOLE.r, ky + KEYHOLE.slot + KEYHOLE.rs];
-const mm = (v) => String(+v.toFixed(1)).replace('.', ',');
+const mm = (v) => dec(+v.toFixed(1));
 
 // Svislá poloha otvorů a u zadané rozteči i vodorovné; mimo stěny krabičky.
 function keyholePlan(p, W, H, warnings) {
   const lw = p.lidWall, { r, slot, rs } = KEYHOLE;
   const tMin = lw + 0.5 + slot + rs, tMax = H - lw - 0.5 - r;
   const top = Math.min(tMax, Math.max(tMin, p.keyholeTop));
-  if (Math.abs(top - p.keyholeTop) > 1e-6) warnings.push(`Otvory na zavěšení: vzdálenost od horní hrany ${mm(p.keyholeTop)} mm se nevejde mezi stěny krabičky, použito ${mm(top)} mm.`);
+  if (Math.abs(top - p.keyholeTop) > 1e-6) {
+    warnings.push(T(`Otvory na zavěšení: vzdálenost od horní hrany ${mm(p.keyholeTop)} mm se nevejde mezi stěny krabičky, použito ${mm(top)} mm.`,
+      `Keyholes: a distance of ${mm(p.keyholeTop)} mm from the top edge does not fit between the walls of the back box, using ${mm(top)} mm.`));
+  }
   if (!(p.keyholeGap > 0)) return { y: H - top, xs: null };
   const gMin = 2 * r + 3, gMax = W - 2 * (lw + 0.5 + r);
   const gap = Math.min(gMax, Math.max(gMin, p.keyholeGap));
-  if (Math.abs(gap - p.keyholeGap) > 1e-6) warnings.push(`Rozteč otvorů na zavěšení ${mm(p.keyholeGap)} mm ${p.keyholeGap > gap ? 'je na šířku pouzdra moc velká' : 'je moc malá'}, použito ${mm(gap)} mm.`);
+  if (Math.abs(gap - p.keyholeGap) > 1e-6) {
+    warnings.push(p.keyholeGap > gap
+      ? T(`Rozteč otvorů na zavěšení ${mm(p.keyholeGap)} mm je na šířku pouzdra moc velká, použito ${mm(gap)} mm.`, `A keyhole spacing of ${mm(p.keyholeGap)} mm is too large for the case width, using ${mm(gap)} mm.`)
+      : T(`Rozteč otvorů na zavěšení ${mm(p.keyholeGap)} mm je moc malá, použito ${mm(gap)} mm.`, `A keyhole spacing of ${mm(p.keyholeGap)} mm is too small, using ${mm(gap)} mm.`));
+  }
   return { y: H - top, xs: [W / 2 - gap / 2, W / 2 + gap / 2] };
 }
 
@@ -573,12 +596,13 @@ function keyholeClear(p, k, W, H, split, posts, warnings) {
     }
   }
   const d = Math.hypot(kx - k[0], ky - k[1]);
-  const msg = `Otvor na zavěšení by zasáhl do spoje dílů, je posunutý o ${mm(d)} mm.`;
+  const msg = T(`Otvor na zavěšení by zasáhl do spoje dílů, je posunutý o ${mm(d)} mm.`, `A keyhole would hit a joint between pieces, it is moved by ${mm(d)} mm.`);
   if (d > 1e-6 && !warnings.includes(msg)) warnings.push(msg);
   const postR = p.lidHeadD / 2 + 1.6, b = khBox([kx, ky]);
   const near = (q) => Math.hypot(Math.max(0, b[0] - q[0], q[0] - b[2]), Math.max(0, b[1] - q[1], q[1] - b[3])) < postR + 0.5;
-  if (posts.some((po) => near(po.h)) && !warnings.some((w) => w.startsWith('Otvor na zavěšení zasahuje')))
-    warnings.push('Otvor na zavěšení zasahuje do sloupku krabičky – změňte rozteč otvorů nebo vzdálenost od horní hrany.');
+  const hit = T('Otvor na zavěšení zasahuje do sloupku krabičky – změňte rozteč otvorů nebo vzdálenost od horní hrany.',
+    'A keyhole cuts into a post of the back box – change the keyhole spacing or the distance from the top edge.');
+  if (posts.some((po) => near(po.h)) && !warnings.includes(hit)) warnings.push(hit);
   return [kx, ky];
 }
 
@@ -598,7 +622,10 @@ function cablePort(p, W, H, posts, split, keyholes, warnings) {
     });
   const what = USB_PORTS[p.usb];
   if (!p.usb.startsWith('back')) {
-    if (p.usbH > p.lidDepth - p.lidPlate - 1) warnings.push(`Otvor pro kabel (${p.usbH} mm) je vyšší než bok krabičky – zvětšete hloubku krabičky.`);
+    if (p.usbH > p.lidDepth - p.lidPlate - 1) {
+      warnings.push(T(`Otvor pro kabel (${mm(p.usbH)} mm) je vyšší než bok krabičky – zvětšete hloubku krabičky.`,
+        `The cable hole (${mm(p.usbH)} mm) is taller than the side of the back box – increase the box depth.`));
+    }
     // poloha podél strany: u boků vlevo/vpravo svisle, dole/nahoře vodorovně
     const vert = p.usb === 'left' || p.usb === 'right';
     const len = vert ? H : W;
@@ -632,7 +659,11 @@ function cablePort(p, W, H, posts, split, keyholes, warnings) {
     }
     if (best) return { port: p.usb, side: false, bb: [best[0] - hw, best[1] - hh, best[0] + hw, best[1] + hh] };
   }
-  warnings.push(`Otvor pro kabel ${what} se nevešel mimo sloupky${split.n > 1 ? ' a spoje dílů' : ''} – zvolte jinou polohu nebo menší otvor.`);
+  warnings.push(split.n > 1
+    ? T(`Otvor pro kabel ${what} se nevešel mimo sloupky a spoje dílů – zvolte jinou polohu nebo menší otvor.`,
+      `The cable hole (${what}) does not fit clear of the posts and the joints between pieces – choose another position or a smaller hole.`)
+    : T(`Otvor pro kabel ${what} se nevešel mimo sloupky – zvolte jinou polohu nebo menší otvor.`,
+      `The cable hole (${what}) does not fit clear of the posts – choose another position or a smaller hole.`));
   return null;
 }
 
@@ -940,24 +971,30 @@ export function lidToPrint(mesh, L) {
   return { ...mesh, vert: v };
 }
 
+// Popis tečky pro člověka (mapa LED, čelní pohled); e.name je vnitřní název (horní, dolní, tečka).
+export function dotLabel(e) {
+  if (e.ch !== ':') return T('desetinná tečka', 'decimal point');
+  return e.name === 'horní' ? T('dvojtečka horní', 'colon, upper dot') : T('dvojtečka dolní', 'colon, lower dot');
+}
+
 // Text s mapou LED pro firmware.
 export function ledMap(L) {
   const p = L.p;
   const lines = [];
   const glyphs = [...new Set(L.els.map((e) => e.glyph))];
   const n = L.els.length;
-  lines.push(`// Rozložení „${p.layout}“, ${n} LED WS2812B v řetězu (index od 0).`);
+  lines.push(T(`// Rozložení „${p.layout}“, ${n} LED WS2812B v řetězu (index od 0).`, `// Layout “${p.layout}”, ${n} WS2812B LEDs in one chain (zero-based index).`));
   lines.push(`#define NUM_LEDS ${n}`);
   const digits = L.cells.filter((c) => c.t in GLYPH_SEGS && c.t !== 'blank');
   if (digits.length) {
-    lines.push('// Pro každou pozici index LED segmentu a..g, -1 = segment chybí.');
+    lines.push(T('// Pro každou pozici index LED segmentu a..g, -1 = segment chybí.', '// For each position the LED index of segments a..g, -1 = no such segment.'));
     lines.push(`const int16_t SEG_LED[${digits.length}][7] = {`);
     for (const c of digits) {
       const row = 'abcdefg'.split('').map((s) => {
         const e = L.els.find((x) => x.glyph === c.idx && x.name === s);
         return e ? String(e.led).padStart(3) : ' -1';
       });
-      lines.push(`  {${row.join(',')} }, // pozice ${c.idx + 1}: „${c.ch}“`);
+      lines.push(`  {${row.join(',')} }, // ${T(`pozice ${c.idx + 1}: „${c.ch}“`, `position ${c.idx + 1}: “${c.ch}”`)}`);
     }
     lines.push('};');
   }
@@ -965,13 +1002,14 @@ export function ledMap(L) {
   if (syms.length) {
     lines.push(`const uint16_t SYMBOL_LED[${syms.length}] = { ${syms.map((d) => d.led).join(', ')} }; // ${syms.map((d) => d.name).join(', ')}`);
     // sloupec veličin (meteostanice): pojmenované indexy do SYMBOL_LED
-    const METEO_ID = { '°C': 'TEPLOTA', '°F': 'TEPLOTA', '%': 'VLHKOST', '%RH': 'VLHKOST', hPa: 'TLAK', mbar: 'TLAK', ppm: 'CO2', 'CO₂': 'CO2', CO2: 'CO2' };
+    const [tmp, hum, prs] = T(['TEPLOTA', 'VLHKOST', 'TLAK'], ['TEMP', 'HUMIDITY', 'PRESSURE']);
+    const METEO_ID = { '°C': tmp, '°F': tmp, '%': hum, '%RH': hum, hPa: prs, mbar: prs, ppm: 'CO2', 'CO₂': 'CO2', CO2: 'CO2' };
     const named = syms.map((d, i) => [METEO_ID[d.name], i]).filter(([id], i, a) => id && a.findIndex(([x]) => x === id) === i);
-    if (named.length > 1) lines.push(`enum { ${named.map(([id, i]) => `SYM_${id} = ${i}`).join(', ')} }; // index do SYMBOL_LED`);
+    if (named.length > 1) lines.push(`enum { ${named.map(([id, i]) => `SYM_${id} = ${i}`).join(', ')} }; // ${T('index do SYMBOL_LED', 'index into SYMBOL_LED')}`);
   }
   const dots = L.els.filter((e) => e.kind === 'dot');
   if (dots.length) {
-    lines.push(`const uint16_t DOT_LED[${dots.length}] = { ${dots.map((d) => d.led).join(', ')} }; // ${dots.map((d) => `${d.ch === ':' ? 'dvojtečka' : 'tečka'} ${d.name}`).join(', ')}`);
+    lines.push(`const uint16_t DOT_LED[${dots.length}] = { ${dots.map((d) => d.led).join(', ')} }; // ${dots.map(dotLabel).join(', ')}`);
   }
   void glyphs;
   return lines.join('\n');

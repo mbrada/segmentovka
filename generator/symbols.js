@@ -11,10 +11,12 @@
 //
 // Symboly lze skládat pod sebe do sloupce: [°C|%|hPa|ppm] – každý má vlastní LED.
 
+import { T } from './i18n.js';
+
 export const SYMBOL_PRESETS = ['°C', '°F', '%', '%RH', 'hPa', 'mbar', 'ppm', 'CO₂', 'cm', 'mm', 'm', 'km/h', 'm/s', 'V', 'A', 'W', 'kW', 'kWh', 'Hz', 'h', 'min', 's', 'lx'];
 
 // Veličiny meteostanice v pořadí shora dolů: [klíč, popis, symbol].
-export const METEO = [['temp', 'Teplota', '°C'], ['hum', 'Vlhkost', '%'], ['press', 'Tlak', 'hPa'], ['co2', 'CO₂', 'ppm']];
+export const METEO = [['temp', T('Teplota', 'Temperature'), '°C'], ['hum', T('Vlhkost', 'Humidity'), '%'], ['press', T('Tlak', 'Pressure'), 'hPa'], ['co2', 'CO₂', 'ppm']];
 
 // Symboly, které se standardně zarovnávají nahoru (ostatní dolů na účaří číslic).
 const TOP_SYMBOLS = /^°/;

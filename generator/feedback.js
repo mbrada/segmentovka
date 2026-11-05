@@ -5,16 +5,18 @@
 // na api/zpetna-vazba (služba v zpetna-vazba/ z ní založí issue v Gitea). Jen pro samostatný web:
 // build.sh skript vloží do <head>; v Claude Artifact (page.html) žádný backend není.
 // K hlášení se dá přiložit aktuální nastavení – stránka ho průběžně ukládá do localStorage.
+// Texty česky i anglicky (T() z i18n.js); chybové hlášky vrací služba v obou jazycích.
 import { DEFAULTS } from './gen.js';
+import { T, LANG } from './i18n.js';
 
 const API = 'api/zpetna-vazba';
 const PARAMS_KEY = 'segmentovka.params.v1';
 const DRAFT_KEY = 'segmentovka.feedback.draft';
 const KINDS = [
-  ['chyba', 'Chyba', 'Co jste dělali, co se stalo a co jste čekali?'],
-  ['napad', 'Nápad', 'Co by generátor měl umět?'],
-  ['dotaz', 'Dotaz', 'Na co se chcete zeptat?'],
-  ['jine', 'Jiné', 'Co nám chcete vzkázat?'],
+  ['chyba', T('Chyba', 'Bug'), T('Co jste dělali, co se stalo a co jste čekali?', 'What did you do, what happened and what did you expect?')],
+  ['napad', T('Nápad', 'Idea'), T('Co by generátor měl umět?', 'What should the generator be able to do?')],
+  ['dotaz', T('Dotaz', 'Question'), T('Na co se chcete zeptat?', 'What would you like to ask?')],
+  ['jine', T('Jiné', 'Other'), T('Co nám chcete vzkázat?', 'What would you like to tell us?')],
 ];
 
 const css = `
@@ -83,6 +85,7 @@ function context() {
   const tab = document.querySelector('.tab[aria-selected="true"]');
   return {
     lang: navigator.language || '',
+    page: LANG,
     viewport: `${innerWidth}×${innerHeight}`,
     screen: `${screen.width}×${screen.height} @${Math.round(devicePixelRatio * 100) / 100}x`,
     view: tab ? tab.textContent.trim() : '',
@@ -92,6 +95,8 @@ function context() {
 }
 
 const plural = (n, one, few, many) => (n === 1 ? one : n >= 2 && n <= 4 ? few : many);
+// služba vrací hlášku česky (error) i anglicky (error_en)
+const errorText = (data) => (LANG === 'en' && data.error_en) || data.error || '';
 
 let dlg = null;
 let openedAt = 0;
@@ -103,32 +108,34 @@ function build() {
   dlg.setAttribute('aria-labelledby', 'fb-t');
   dlg.innerHTML = `
 <form novalidate>
-  <div class="fb-head"><h2 id="fb-t">Zpětná vazba</h2><button type="button" class="fb-x" data-close aria-label="Zavřít">×</button></div>
-  <p class="fb-lead">Narazili jste na chybu, chybí vám nějaká funkce, nebo si nevíte rady? Zprávu dostane přímo autor generátoru.</p>
+  <div class="fb-head"><h2 id="fb-t">${T('Zpětná vazba', 'Feedback')}</h2><button type="button" class="fb-x" data-close aria-label="${T('Zavřít', 'Close')}">×</button></div>
+  <p class="fb-lead">${T('Narazili jste na chybu, chybí vám nějaká funkce, nebo si nevíte rady? Zprávu dostane přímo autor generátoru.',
+    'Found a bug, missing a feature, or stuck? Your message goes straight to the author of the generator.')}</p>
   <fieldset>
-    <legend>O co jde</legend>
+    <legend>${T('O co jde', 'What is it about')}</legend>
     <div class="fb-kinds">${KINDS.map(([v, l]) => `<label><input type="radio" name="kind" value="${v}"><span>${l}</span></label>`).join('')}</div>
   </fieldset>
   <div class="fb-field">
-    <label class="fb-label" for="fb-text">Zpráva</label>
+    <label class="fb-label" for="fb-text">${T('Zpráva', 'Message')}</label>
     <textarea id="fb-text" name="message" rows="6" maxlength="5000" required></textarea>
     <span class="fb-count" id="fb-count" aria-live="off"></span>
   </div>
   <div class="fb-field">
-    <label class="fb-label" for="fb-email">E-mail <span>– nepovinný, jen pokud chcete odpověď</span></label>
+    <label class="fb-label" for="fb-email">E-mail <span>${T('– nepovinný, jen pokud chcete odpověď', '– optional, only if you want a reply')}</span></label>
     <input id="fb-email" name="email" type="email" maxlength="200" autocomplete="email" inputmode="email" spellcheck="false">
   </div>
-  <label class="fb-check"><input type="checkbox" name="attach" checked>Přiložit nastavení generátoru<span id="fb-attach-note"></span></label>
+  <label class="fb-check"><input type="checkbox" name="attach" checked>${T('Přiložit nastavení generátoru', 'Attach the generator settings')}<span id="fb-attach-note"></span></label>
   <div class="fb-hp" aria-hidden="true"><label>Web <input name="website" tabindex="-1" autocomplete="off"></label></div>
-  <p class="fb-note">Zpráva se uloží jako úkol v systému Gitea na serveru autora a nikam jinam neodchází. Přiloží se k ní typ prohlížeče a velikost okna. E-mail poslouží jen k odpovědi.</p>
+  <p class="fb-note">${T('Zpráva se uloží jako úkol v systému Gitea na serveru autora a nikam jinam neodchází. Přiloží se k ní typ prohlížeče a velikost okna. E-mail poslouží jen k odpovědi.',
+    'The message is stored as an issue in Gitea on the author’s server and goes nowhere else. Your browser type and window size are attached. Your e-mail is only used to reply.')}</p>
   <p class="fb-msg" id="fb-msg" role="alert"></p>
-  <div class="fb-btns"><button type="button" class="btn" data-close>Zrušit</button><button type="submit" class="btn primary">Odeslat</button></div>
+  <div class="fb-btns"><button type="button" class="btn" data-close>${T('Zrušit', 'Cancel')}</button><button type="submit" class="btn primary">${T('Odeslat', 'Send')}</button></div>
 </form>
 <div class="fb-done" hidden>
-  <div class="fb-head"><h2 tabindex="-1">Děkujeme</h2><button type="button" class="fb-x" data-close aria-label="Zavřít">×</button></div>
-  <p class="fb-big">Zpráva dorazila.</p>
+  <div class="fb-head"><h2 tabindex="-1">${T('Děkujeme', 'Thank you')}</h2><button type="button" class="fb-x" data-close aria-label="${T('Zavřít', 'Close')}">×</button></div>
+  <p class="fb-big">${T('Zpráva dorazila.', 'Your message has arrived.')}</p>
   <p class="fb-reply"></p>
-  <div class="fb-btns"><button type="button" class="btn primary" data-close>Zavřít</button></div>
+  <div class="fb-btns"><button type="button" class="btn primary" data-close>${T('Zavřít', 'Close')}</button></div>
 </div>`;
   document.body.appendChild(dlg);
 
@@ -166,7 +173,7 @@ function open(e) {
     form.email.value = draft.email || '';
   }
   const kind = KINDS.find((k) => k[0] === form.kind.value);
-  form.message.placeholder = kind ? kind[2] : 'Napište, co máte na srdci.';
+  form.message.placeholder = kind ? kind[2] : T('Napište, co máte na srdci.', 'Tell us what is on your mind.');
   dlg.updateCount();
 
   const s = settings();
@@ -174,9 +181,11 @@ function open(e) {
   form.attach.disabled = !s;
   if (s) {
     const n = s.changed.filter(([k]) => k !== 'layout').length;
-    note.textContent = `rozložení „${s.params.layout}“ a ${n ? `${n} ${plural(n, 'změněný parametr', 'změněné parametry', 'změněných parametrů')}` : 'jinak výchozí parametry'} – pomůže chybu zopakovat`;
+    note.textContent = T(
+      `rozložení „${s.params.layout}“ a ${n ? `${n} ${plural(n, 'změněný parametr', 'změněné parametry', 'změněných parametrů')}` : 'jinak výchozí parametry'} – pomůže chybu zopakovat`,
+      `layout “${s.params.layout}” and ${n ? `${n} changed parameter${n === 1 ? '' : 's'}` : 'otherwise default parameters'} – helps to reproduce a bug`);
   } else {
-    note.textContent = 'nastavení se nepodařilo zjistit (prohlížeč nepovoluje úložiště)';
+    note.textContent = T('nastavení se nepodařilo zjistit (prohlížeč nepovoluje úložiště)', 'the settings are not available (the browser blocks storage)');
     form.attach.checked = false;
   }
   setMsg('');
@@ -189,9 +198,13 @@ async function send(form) {
   const kind = form.kind.value;
   const message = form.message.value.trim();
   const email = form.email.value.trim();
-  if (!kind) { setMsg('Vyberte, o co jde.'); form.querySelector('input[name="kind"]').focus(); return; }
-  if (message.length < 3) { setMsg('Napište prosím zprávu.'); form.message.focus(); return; }
-  if (email && !form.email.checkValidity()) { setMsg('E-mail nevypadá správně. Opravte ho, nebo pole nechte prázdné.'); form.email.focus(); return; }
+  if (!kind) { setMsg(T('Vyberte, o co jde.', 'Choose what it is about.')); form.querySelector('input[name="kind"]').focus(); return; }
+  if (message.length < 3) { setMsg(T('Napište prosím zprávu.', 'Please write a message.')); form.message.focus(); return; }
+  if (email && !form.email.checkValidity()) {
+    setMsg(T('E-mail nevypadá správně. Opravte ho, nebo pole nechte prázdné.', 'The e-mail does not look right. Fix it or leave the field empty.'));
+    form.email.focus();
+    return;
+  }
 
   const payload = { kind, message, email, website: form.website.value, elapsed: Date.now() - openedAt, context: context() };
   const s = form.attach.checked && settings();
@@ -199,27 +212,28 @@ async function send(form) {
 
   const btn = form.querySelector('button[type="submit"]');
   btn.disabled = true;
-  btn.textContent = 'Odesílám…';
+  btn.textContent = T('Odesílám…', 'Sending…');
   setMsg('');
   try {
     const res = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || '');
+    if (!res.ok) throw new Error(errorText(data));
     store.del(DRAFT_KEY);
     const done = dlg.querySelector('.fb-done');
     done.querySelector('.fb-reply').textContent = email
-      ? `Kdyby bylo potřeba něco doplnit nebo odpovědět, ozveme se na ${email}.`
-      : 'Bez e-mailu vám nemůžeme odpovědět, ale zprávu si přečteme.';
+      ? T(`Kdyby bylo potřeba něco doplnit nebo odpovědět, ozveme se na ${email}.`, `If we need more details or want to reply, we will write to ${email}.`)
+      : T('Bez e-mailu vám nemůžeme odpovědět, ale zprávu si přečteme.', 'Without an e-mail we cannot reply, but we will read your message.');
     form.hidden = true;
     form.reset();
     done.hidden = false;
     done.querySelector('h2').focus();
     if (window.gtag) window.gtag('event', 'feedback_sent', { kind });
   } catch (err) {
-    setMsg(err.message || 'Zprávu se nepodařilo odeslat. Zkontrolujte připojení k internetu a zkuste to znovu – text zůstal ve formuláři.');
+    setMsg(err.message || T('Zprávu se nepodařilo odeslat. Zkontrolujte připojení k internetu a zkuste to znovu – text zůstal ve formuláři.',
+      'The message could not be sent. Check your internet connection and try again – your text is still in the form.'));
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Odeslat';
+    btn.textContent = T('Odeslat', 'Send');
   }
 }
 
@@ -241,8 +255,8 @@ function init() {
   if (faq) {
     const cta = document.createElement('div');
     cta.className = 'fb-cta';
-    cta.innerHTML = '<p>Nenašli jste odpověď, něco nefunguje nebo máte nápad?</p>';
-    cta.append(button('btn', 'Napsat zpětnou vazbu'));
+    cta.innerHTML = `<p>${T('Nenašli jste odpověď, něco nefunguje nebo máte nápad?', 'Did not find an answer, something does not work, or have an idea?')}</p>`;
+    cta.append(button('btn', T('Napsat zpětnou vazbu', 'Send feedback')));
     faq.append(cta);
   }
   // patičku sdílí s consent.js; kdo přijde první, ten ji založí
@@ -252,8 +266,8 @@ function init() {
     foot.className = 'cc-foot';
     (document.querySelector('.app') || document.body.lastElementChild).after(foot);
   }
-  foot.prepend(button('', 'Zpětná vazba'));
-  if (location.hash === '#zpetna-vazba') open();
+  foot.prepend(button('', T('Zpětná vazba', 'Feedback')));
+  if (location.hash === '#zpetna-vazba' || location.hash === '#feedback') open();
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();

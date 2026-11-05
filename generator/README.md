@@ -7,7 +7,24 @@ které se zezadu jen zacvaknou do lůžka. Vychází z pouzdra `Case.3mf` (hodin
 (objem 258,7 vs. 259,6 cm³, řezy se shodují).
 Licence generátoru: GNU AGPL-3.0-or-later, podrobnosti v `../README.md`.
 
-Běží na https://segmentovka.miloslavbrada.cz
+Běží na https://segmentovka.miloslavbrada.cz, anglicky na https://segmentovka.miloslavbrada.cz/en/
+
+## Jazyky
+
+Stránka je česky a anglicky, obě verze skládá `build.sh` z jedné `page.html`:
+
+- statické HTML (záhlaví, popis, časté otázky, patička, `<title>`, description) přeloží podle dvojic
+  v `page.en.py`; každá česká část musí v `page.html` být právě jednou (nebo tolikrát, kolikrát je
+  u dvojice uvedeno) a český text nebo atribut (`title`, `aria-label`, `alt`, `placeholder`), který
+  v anglické verzi zůstane, build nahlásí jako nepřeložený – kromě seznamu `neutral`
+- texty v JS jsou přímo v kódu dvakrát vedle sebe: `T('česky', 'English')` z `i18n.js`; jazyk se bere
+  z `lang` na `<div class="app">` (v Node a ve workeru je čeština), čísla se formátují podle něj
+  (`cs-CZ` / `en-US`) – i varování z `gen.js` a `split.js`, mapa LED (`SYM_TEMP` místo `SYM_TEPLOTA`),
+  názvy souborů v ZIPu (`_case.stl`, `_params.json`, `README.txt`) a díly v 3MF
+- `dist/en/index.html` má `<base href="../">`, takže moduly, WASM i `api/zpetna-vazba` jsou společné;
+  obě verze mají `hreflang` (x-default je angličtina), sitemap s alternativami, vlastní Open Graph
+  (`og-en.png`) a vpravo nahoře přepínač CS / EN (jen samostatný web, místo `<!--lang-switch-->`)
+- uložené parametry, kóty, koncept zpětné vazby i souhlas s cookies sdílí obě verze (stejný `localStorage`)
 
 - styly segmentů: hroty 45° (originál), šikmé rohy (klasický LED), zaoblené, rovné (blokové)
   a LCD – asymetrické segmenty jako DSEG7 Modern: spáry pod 30°/60°, každý vnější roh patří
@@ -58,20 +75,24 @@ Běží na https://segmentovka.miloslavbrada.cz
 - `split.js` – volba řezů a rozmístění zámků, šroubů a výřezů pro vodiče na spojích
 - `export.js` – binární STL, 3MF, ZIP (deflate přes CompressionStream)
 - `worker.js` – výpočet ve Web Workeru
-- `page.html` – stránka (obsah ve tvaru pro Claude Artifact, bez `<head>`)
+- `page.html` – stránka (obsah ve tvaru pro Claude Artifact, bez `<head>`), česky
+- `page.en.py` – anglické texty statického HTML z `page.html` (viz Jazyky)
+- `i18n.js` – jazyk stránky a `T('česky', 'English')` pro texty v JS
 - `consent.js` – Google Analytics (G-GX5DWNWRNJ) se souhlasem: Consent Mode v2 v základním režimu,
   `gtag.js` se načte až po kliknutí na Přijmout; volba v `localStorage` na 12 měsíců, odvolání
   odkazem Nastavení cookies v patičce (smaže cookies `_ga*`); `build.sh` ho vkládá jen do `dist/`
 - `feedback.js` – zpětná vazba: tlačítko pod Častými otázkami a v patičce otevře formulář (chyba / nápad /
   dotaz / jiné, zpráva, nepovinný e-mail, volitelně přiložené nastavení z `localStorage` – rozložení, změněné
   parametry a celý `parametry.json`) a odešle ho na `api/zpetna-vazba`; rozepsaný text se pamatuje
-  v `localStorage`, `#zpetna-vazba` v adrese formulář rovnou otevře; `build.sh` ho vkládá jen do `dist/`
+  v `localStorage`, `#zpetna-vazba` (nebo `#feedback`) v adrese formulář rovnou otevře; `build.sh` ho vkládá jen do `dist/`
   (v Claude Artifact žádný backend není); patičku sdílí s `consent.js`
 - `zpetna-vazba/` – služba za tím formulářem (Python, jen standardní knihovna), viz Zpětná vazba níže
 - `manifold.js`, `manifold.wasm` – manifold-3d 3.5.4 (Apache-2.0, `manifold-LICENSE.txt`)
-- `build.sh` – složí samostatný web do `dist/`; přidá SEO hlavičku (canonical, Open Graph,
-  JSON-LD WebApplication z `<title>` a description v `page.html`), `robots.txt` a `sitemap.xml`
-- `og.png` – náhled odkazu 1200 × 630; vzniká z `tools/og.mjs` (displej z generátoru) přes Inkscape
+- `build.sh` – složí samostatný web do `dist/` (česky) a `dist/en/` (anglicky); přidá SEO hlavičku
+  (canonical, hreflang, Open Graph, JSON-LD WebApplication z `<title>` a description), `robots.txt`
+  a `sitemap.xml`
+- `og.png`, `og-en.png` – náhled odkazu 1200 × 630; vzniká z `tools/og.mjs` (displej z generátoru,
+  `node tools/og.mjs og-en.svg en` pro anglický) přes Inkscape
 
 Nasazení a konfigurace serveru nejsou součástí repozitáře (autor je má v soukromé složce `provoz/`,
 kterou `.gitignore` vynechává). Web je statický – stačí obsah `dist/` na libovolném HTTP serveru;
@@ -99,7 +120,9 @@ Hlášení z formuláře nejsou v žádné databázi – každé je issue v souk
 repozitáře s právem zápisu – bez něj nejdou štítky – a token jen se scope `write:issue`), takže majiteli
 repozitáře přijde na každé hlášení e-mail od Gitea. V issue je zpráva, kontakt s odkazem na odpověď
 e-mailem, změněné parametry, celý `parametry.json` (jde načíst tlačítkem Načíst parametry…), upozornění
-generátoru a prohlížeč. Štítky si služba při prvním hlášení založí sama.
+generátoru a prohlížeč. Hlášení z anglické verze to mají v prvním řádku („z anglické verze – odpovídat
+anglicky“, stránka posílá `context.page`). Chybové hlášky vrací služba česky (`error`) i anglicky
+(`error_en`), formulář si vezme tu svou. Štítky si služba při prvním hlášení založí sama.
 
 `zpetna-vazba/server.py` (jen standardní knihovna Pythonu) poslouchá na 127.0.0.1:24790 a reverzní proxy
 mu předává `POST /api/zpetna-vazba` s hlavičkou `X-Real-IP`; token čte ze souboru od systemd

@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Miloslav Brada
 //
 // Exporty: binární STL, 3MF (pouzdro + difuzory jako díly jednoho objektu) a ZIP.
+import { T, LOCALE } from './i18n.js';
 
 const CRC_TABLE = (() => {
   const t = new Uint32Array(256);
@@ -80,9 +81,9 @@ export function threeMF({ title, groups }) {
     items.push(`<item objectid="${itemId}"${x || y || z ? ` transform="1 0 0 0 1 0 0 0 1 ${num(x)} ${num(y)} ${num(z)}"` : ''}/>`);
   }
   const model = `<?xml version="1.0" encoding="UTF-8"?>
-<model unit="millimeter" xml:lang="cs-CZ" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+<model unit="millimeter" xml:lang="${LOCALE}" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
 <metadata name="Title">${esc(title)}</metadata>
-<metadata name="Application">Generátor segmentovky</metadata>
+<metadata name="Application">${T('Generátor segmentovky', 'Segmentovka generator')}</metadata>
 <resources>
 ${res.join('\n')}
 </resources>

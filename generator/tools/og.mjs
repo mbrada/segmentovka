@@ -3,11 +3,16 @@
 //
 // Náhledový obrázek pro sdílení odkazu (Open Graph, 1200 × 630).
 // Použití: node tools/og.mjs og.svg && inkscape og.svg --export-type=png --export-filename=og.png
+//          node tools/og.mjs og-en.svg en && inkscape og-en.svg --export-type=png --export-filename=og-en.png
 // Displej vzniká přímo z generátoru (styl LCD), rozsvícené segmenty ukazují „12:45“.
 import { writeFileSync } from 'node:fs';
 import { computeLayout } from '../gen.js';
 
 const W = 1200, H = 630;
+const EN = process.argv[3] === 'en';
+const TAGLINE = EN ? '3D-printable case generator for 7-segment WS2812B LED displays'
+  : 'Generátor pouzdra pro 7segmentový displej z LED WS2812B na 3D tisk';
+const URL = EN ? 'segmentovka.miloslavbrada.cz/en' : 'segmentovka.miloslavbrada.cz';
 const SEGS = { 0: 'abcdef', 1: 'bc', 2: 'abdeg', 3: 'abcdg', 4: 'bcfg', 5: 'acdfg', 6: 'acdefg', 7: 'abc', 8: 'abcdefg', 9: 'abcdfg' };
 const shown = '1245';
 const L = computeLayout({ layout: '88:88', segStyle: 'lcd', gap: 1.5, slant: 6, margin: 0 });
@@ -31,7 +36,7 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" 
 <rect width="${W}" height="${H}" fill="#0d0f0e"/>
 <g filter="url(#glow)">${segs}</g>
 <text x="80" y="${oy + L.caseH * s + 92}" font-family="Inter Display, Inter, sans-serif" font-weight="800" font-size="64" fill="#f2f3f1">Segmentovka</text>
-<text x="80" y="${oy + L.caseH * s + 140}" font-family="Inter, sans-serif" font-weight="500" font-size="29" fill="#a9b0ac">Generátor pouzdra pro 7segmentový displej z LED WS2812B na 3D tisk</text>
-<text x="${W - 80}" y="${oy + L.caseH * s + 92}" text-anchor="end" font-family="IBM Plex Mono, monospace" font-weight="600" font-size="24" fill="#ff6a48">segmentovka.miloslavbrada.cz</text>
+<text x="80" y="${oy + L.caseH * s + 140}" font-family="Inter, sans-serif" font-weight="500" font-size="29" fill="#a9b0ac">${TAGLINE}</text>
+<text x="${W - 80}" y="${oy + L.caseH * s + 92}" text-anchor="end" font-family="IBM Plex Mono, monospace" font-weight="600" font-size="24" fill="#ff6a48">${URL}</text>
 </svg>`;
 writeFileSync(process.argv[2] || 'og.svg', svg);

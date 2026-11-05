@@ -7,7 +7,7 @@ Původní soubor modelu (`Case.3mf`) v repozitáři není, stáhnete ho z Printa
 (licence CC BY-NC 4.0).
 
 - `generator/` – webový generátor pouzdra s vlastním rozložením, běží na https://segmentovka.miloslavbrada.cz
-  (podrobnosti v `generator/README.md`)
+  (anglicky https://segmentovka.miloslavbrada.cz/en/, podrobnosti v `generator/README.md`)
 
 ## Licence
 

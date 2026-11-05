@@ -53,10 +53,15 @@ TZ = ZoneInfo('Europe/Prague')
 
 
 class Rejected(Exception):
-    """Hlášení nejde přijmout; zpráva je pro návštěvníka."""
-    def __init__(self, status, message):
+    """Hlášení nejde přijmout; zpráva je pro návštěvníka – česky a anglicky (web má obě verze,
+    odpověď nese obě a stránka si vybere)."""
+    def __init__(self, status, message, message_en=None):
         super().__init__(message)
         self.status = status
+        self.message_en = message_en or message
+
+
+INVALID = ('Neplatná data formuláře.', 'Invalid form data.')
 
 
 # ---------- kontrola vstupu ----------
@@ -65,7 +70,7 @@ def text(v, limit, multiline=False):
     if v is None:
         return ''
     if not isinstance(v, str):
-        raise Rejected(400, 'Neplatná data formuláře.')
+        raise Rejected(400, *INVALID)
     v = CONTROL_RE.sub('', v.replace('\r\n', '\n').replace('\r', '\n'))
     if not multiline:
         v = ' '.join(v.split())
@@ -75,20 +80,22 @@ def text(v, limit, multiline=False):
 def parse(data):
     """Z JSONu formuláře udělá ověřené hlášení, nebo vyhodí Rejected."""
     if not isinstance(data, dict):
-        raise Rejected(400, 'Neplatná data formuláře.')
+        raise Rejected(400, *INVALID)
     kind = data.get('kind')
     if kind not in KINDS:
-        raise Rejected(400, 'Vyberte, o co jde.')
+        raise Rejected(400, 'Vyberte, o co jde.', 'Choose what it is about.')
     message = text(data.get('message'), MAX_MESSAGE + 1, multiline=True)
     if len(message) < 3:
-        raise Rejected(400, 'Napište prosím zprávu.')
+        raise Rejected(400, 'Napište prosím zprávu.', 'Please write a message.')
     if len(message) > MAX_MESSAGE:
-        raise Rejected(400, f'Zpráva je delší než {MAX_MESSAGE} znaků.')
+        raise Rejected(400, f'Zpráva je delší než {MAX_MESSAGE} znaků.', f'The message is longer than {MAX_MESSAGE} characters.')
     if len(LINK_RE.findall(message)) > MAX_LINKS:
-        raise Rejected(400, f'Zpráva obsahuje víc než {MAX_LINKS} odkazy. Nechte prosím jen ty nejdůležitější.')
+        raise Rejected(400, f'Zpráva obsahuje víc než {MAX_LINKS} odkazy. Nechte prosím jen ty nejdůležitější.',
+                       f'The message contains more than {MAX_LINKS} links. Please keep only the most important ones.')
     email = text(data.get('email'), 201)
     if email and (len(email) > 200 or not EMAIL_RE.match(email)):
-        raise Rejected(400, 'E-mail nevypadá správně. Opravte ho, nebo pole nechte prázdné.')
+        raise Rejected(400, 'E-mail nevypadá správně. Opravte ho, nebo pole nechte prázdné.',
+                       'The e-mail does not look right. Fix it or leave the field empty.')
     params = data.get('params')
     if params is not None:
         if not isinstance(params, dict) or len(json.dumps(params, ensure_ascii=False)) > MAX_PARAMS:
@@ -107,6 +114,8 @@ def parse(data):
         'params': params,
         'changed': changed,
         'lang': text(ctx.get('lang'), 40),
+        # jazyk stránky, ze které hlášení přišlo (cs, en); starší stránky ho neposílají
+        'page': 'en' if ctx.get('page') == 'en' else 'cs',
         'viewport': text(ctx.get('viewport'), 40),
         'screen': text(ctx.get('screen'), 60),
         'view': text(ctx.get('view'), 60),
@@ -153,7 +162,9 @@ def title_of(r):
 def body_of(r, user_agent, now=None):
     now = now or datetime.now(TZ)
     kind = KINDS[r['kind']][0]
-    out = [f"**{kind}** z formuláře na segmentovka.miloslavbrada.cz · {now.day}. {now.month}. {now.year} {now:%H:%M}", '',
+    where = 'z anglické verze (segmentovka.miloslavbrada.cz/en/) – odpovídat anglicky' if r['page'] == 'en' \
+        else 'z formuláře na segmentovka.miloslavbrada.cz'
+    out = [f"**{kind}** {where} · {now.day}. {now.month}. {now.year} {now:%H:%M}", '',
            quote(r['message']), '']
     if r['email']:
         subject = urllib.parse.quote(f'Re: {title_of(r)}')
@@ -184,7 +195,7 @@ def body_of(r, user_agent, now=None):
             out += ['', 'Upozornění generátoru:', '', quote(r['warnings'])]
     out += ['', '### Prohlížeč', '', '| | |', '|---|---|',
             f'| prohlížeč | {cell(user_agent)} |',
-            f"| jazyk | {cell(r['lang'])} |",
+            f"| jazyk | {cell(r['lang'])} · stránka {'anglická' if r['page'] == 'en' else 'česká'} |",
             f"| okno | {cell(r['viewport'])} (obrazovka {cell(r['screen'])}) |"]
     if r['view']:
         out.append(f"| pohled | {cell(r['view'])} |")
@@ -331,7 +342,7 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.app['static'] and not self.path.startswith('/api/'):
             return super().do_GET()
-        self.reply(405 if self.path.split('?')[0] == PATH else 404, {'error': 'Nenalezeno.'})
+        self.reply(405 if self.path.split('?')[0] == PATH else 404, {'error': 'Nenalezeno.', 'error_en': 'Not found.'})
 
     def do_HEAD(self):
         if self.app['static']:
@@ -340,37 +351,37 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         if self.path.split('?')[0] != PATH:
-            return self.reply(404, {'error': 'Nenalezeno.'})
+            return self.reply(404, {'error': 'Nenalezeno.', 'error_en': 'Not found.'})
         try:
             number = self.accept()
         except Rejected as e:
             if e.status != 200:
                 log(f'odmítnuto ({e.status}): {e}')
-            return self.reply(e.status, {'ok': True} if e.status == 200 else {'error': str(e)})
+            return self.reply(e.status, {'ok': True} if e.status == 200 else {'error': str(e), 'error_en': e.message_en})
         self.reply(201, {'ok': True, 'number': number})
 
     def accept(self):
         origin = self.headers.get('Origin')
         if self.app['origins'] and origin and origin not in self.app['origins']:
-            raise Rejected(403, 'Odesílat jde jen z webu Segmentovky.')
+            raise Rejected(403, 'Odesílat jde jen z webu Segmentovky.', 'Messages can only be sent from the Segmentovka website.')
         if 'application/json' not in (self.headers.get('Content-Type') or ''):
-            raise Rejected(415, 'Neplatná data formuláře.')
+            raise Rejected(415, *INVALID)
         try:
             size = int(self.headers.get('Content-Length') or '')
         except ValueError:
-            raise Rejected(411, 'Neplatná data formuláře.') from None
+            raise Rejected(411, *INVALID) from None
         if size > MAX_BODY:
-            raise Rejected(413, 'Zpráva je příliš dlouhá.')
+            raise Rejected(413, 'Zpráva je příliš dlouhá.', 'The message is too long.')
         try:
             data = json.loads(self.rfile.read(size).decode('utf-8'))
         except (UnicodeDecodeError, ValueError):
-            raise Rejected(400, 'Neplatná data formuláře.') from None
+            raise Rejected(400, *INVALID) from None
         if isinstance(data, dict) and data.get('website'):
             raise Rejected(200, 'honeypot')        # robot vyplnil skryté pole: tváříme se, že prošlo
         report = parse(data)
         elapsed = data.get('elapsed')
         if not isinstance(elapsed, (int, float)) or elapsed < MIN_FILL_MS:
-            raise Rejected(400, 'Odesláno příliš rychle. Počkejte chvilku a zkuste to znovu.')
+            raise Rejected(400, 'Odesláno příliš rychle. Počkejte chvilku a zkuste to znovu.', 'Sent too quickly. Wait a moment and try again.')
         fingerprint = Recent.key(report)
         if fingerprint in self.app['recent']:
             log('duplicitní zpráva, issue se nezakládá')
@@ -379,16 +390,17 @@ class Handler(SimpleHTTPRequestHandler):
         if ip in ('127.0.0.1', '::1'):
             ip = self.headers.get('X-Real-IP') or ip
         if not self.app['limiter'].allow(ip):
-            raise Rejected(429, 'Odeslali jste hodně zpráv za sebou. Zkuste to prosím později.')
+            raise Rejected(429, 'Odeslali jste hodně zpráv za sebou. Zkuste to prosím později.', 'You have sent many messages in a row. Please try again later.')
         kind = KINDS[report['kind']]
         labels = [BASE_LABEL] + ([(kind[1], kind[2], '')] if kind[1] else [])
         try:
             number = self.app['gitea'].create_issue(title_of(report), body_of(report, self.headers.get('User-Agent', '')), labels)
         except (urllib.error.URLError, OSError, ValueError, KeyError) as e:
             log(f'Gitea selhala: {e}')
-            raise Rejected(502, 'Zprávu se teď nepodařilo uložit. Zkuste to prosím za chvíli znovu.') from None
+            raise Rejected(502, 'Zprávu se teď nepodařilo uložit. Zkuste to prosím za chvíli znovu.',
+                           'The message could not be saved right now. Please try again in a moment.') from None
         self.app['recent'].add(fingerprint)
-        log(f"issue #{number} ({report['kind']}{', s e-mailem' if report['email'] else ''})")
+        log(f"issue #{number} ({report['kind']}{', s e-mailem' if report['email'] else ''}{', anglicky' if report['page'] == 'en' else ''})")
         return number
 
 

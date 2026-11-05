@@ -180,6 +180,22 @@ class TestService(Base):
         st, res = post(self.url, report(message=three + ' a https://d.example'))
         self.assertEqual(st, 400)
         self.assertIn('odkazy', res['error'])
+        self.assertIn('links', res['error_en'])
+
+    def test_errors_in_both_languages(self):
+        st, res = post(self.url, report(message='a'))
+        self.assertEqual((st, res), (400, {'error': 'Napište prosím zprávu.', 'error_en': 'Please write a message.'}))
+        st, res = post(self.url, b'{', {'Content-Type': 'application/json'})
+        self.assertEqual((st, res['error_en']), (400, 'Invalid form data.'))
+
+    def test_page_language_in_issue(self):
+        post(self.url, report(context={'lang': 'de-DE', 'page': 'en'}))
+        post(self.url, report())
+        [(_, _, en, _), (_, _, cs, _)] = self.issues()
+        self.assertIn('z anglické verze', en['body'])
+        self.assertIn('| jazyk | de-DE · stránka anglická |', en['body'])
+        self.assertNotIn('anglick', cs['body'])          # starší stránka bez context.page = česká
+        self.assertIn('stránka česká', cs['body'])
 
     def test_other_paths(self):
         base = f'http://127.0.0.1:{self.srv.server_port}'
