@@ -173,6 +173,7 @@ h1, h2, h3 { text-wrap: balance; margin: 0; }
 .about h2 { font-size: 19px; font-weight: 750; line-height: 1.25; }
 .about h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 700; margin-top: 6px; }
 .about p { margin: 0; }
+.about-shot { display: block; width: 100%; max-width: 560px; height: auto; border: 1px solid var(--line); border-radius: 8px; }
 .about p, .about .tips { max-width: 78ch; }
 .about code { font-family: var(--font-mono); font-size: 0.92em; background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
 .about details { border-top: 1px solid var(--line); padding: 8px 0 2px; }
@@ -362,6 +363,7 @@ pre { margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: 1
     <div class="card about-text">
       <h2>Generátor pouzdra pro 7segmentový displej z LED WS2812B</h2>
       <p>Segmentovka navrhne 3D tisknutelné pouzdro pro velký sedmisegmentový displej, který svítí adresovatelnými LED WS2812B (NeoPixel). Každý segment má vlastní světlovod a za ním lůžko, do kterého se zezadu jen zacvakne kulatý modul s jednou LED. Pájí se jen vodiče mezi moduly – žádný plošný spoj ani lepení.</p>
+      <!--nahled-->
       <p>Rozložení zapíšete jako text: <code>88:88</code> pro hodiny, <code>88:88:88</code> pro hodiny se sekundami, <code>-88.8°</code> pro teploměr nebo <code>888.8[°C|%|hPa|ppm]</code> pro meteostanici s teplotou, vlhkostí, tlakem a CO₂. 3D náhled i čelní pohled s pořadím LED se přepočítají okamžitě a celý výpočet běží ve vašem prohlížeči.</p>
       <h3>Co se dá nastavit</h3>
       <ul class="tips">

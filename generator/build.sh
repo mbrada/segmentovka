@@ -80,17 +80,18 @@ if errors:
     sys.exit('page.en.py nesedí na page.html:\n  ' + '\n  '.join(errors))
 
 # ---------- obě jazykové verze ----------
-favicon = ("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22 36'%3E"
-           "%3Cg fill='%23d93b1b'%3E%3Cpath d='M5 2h12l-2 3H7z'/%3E%3Cpath d='M4 4l2 3v8l-1 2-2-1V5z'/%3E"
-           "%3Cpath d='M6 17h10l2 1-2 1H6l-2-1z'/%3E%3Cpath d='M18 19l1 1v11l-1 1-2-2v-9z'/%3E"
-           "%3Cpath d='M7 31h8l2 3H5z'/%3E%3C/g%3E%3C/svg%3E")
 LANGS = {
     'cs': dict(src=src, out='dist/index.html', url=SITE, locale='cs_CZ', og='og.png', base='',
-               og_alt='Svítící 7segmentový displej 12:45 ve stylu LCD', os='webový prohlížeč', nav='Jazyk'),
+               og_alt='Svítící 7segmentový displej 12:45 ve stylu LCD', os='webový prohlížeč', nav='Jazyk',
+               shot_alt='3D náhled pouzdra hodin 88:88 s difuzory segmentů, pohled šikmo zepředu'),
     'en': dict(src=src_en, out='dist/en/index.html', url=SITE + 'en/', locale='en_US', og='og-en.png',
                base='<base href="../">\n', og_alt='A glowing 7-segment display showing 12:45 in the LCD style',
-               os='web browser', nav='Language'),
+               os='web browser', nav='Language',
+               shot_alt='3D preview of an 88:88 clock case with segment diffusers, oblique front view'),
 }
+# obrázek 3D náhledu v popisu generátoru (vzniká z tools/nahled.mjs); jen pro samostatný web,
+# v Claude Artifact by relativní adresa nevedla nikam
+SHOT = 'nahled.webp'
 # x-default: kdo nemluví česky, dostane angličtinu
 ALT = {'cs': SITE, 'en': SITE + 'en/', 'x-default': SITE + 'en/'}
 
@@ -100,12 +101,13 @@ for lang, L in LANGS.items():
     head, body = page[:cut], page[cut:]
     title = re.search(r'<title>(.*?)</title>', head).group(1)
     desc = re.search(r'<meta name="description" content="(.*?)">', head).group(1)
-    ld = json.dumps({
-        '@context': 'https://schema.org', '@type': 'WebApplication', 'name': 'Segmentovka', 'url': L['url'],
-        'description': desc, 'inLanguage': lang, 'applicationCategory': 'DesignApplication',
-        'operatingSystem': L['os'], 'isAccessibleForFree': True, 'image': SITE + L['og'],
-        'offers': {'@type': 'Offer', 'price': '0', 'priceCurrency': 'CZK'},
-    }, ensure_ascii=False)
+    ld = json.dumps({'@context': 'https://schema.org', '@graph': [
+        {'@type': 'WebSite', 'name': 'Segmentovka', 'url': SITE, 'inLanguage': ['cs', 'en']},
+        {'@type': 'WebApplication', 'name': 'Segmentovka', 'url': L['url'],
+         'description': desc, 'inLanguage': lang, 'applicationCategory': 'DesignApplication',
+         'operatingSystem': L['os'], 'isAccessibleForFree': True, 'image': [SITE + SHOT, SITE + L['og']],
+         'offers': {'@type': 'Offer', 'price': '0', 'priceCurrency': 'CZK'}},
+    ]}, ensure_ascii=False)
     other = 'en' if lang == 'cs' else 'cs'
     # vyhledávače a náhledy odkazů (Open Graph); jen pro samostatný web, v page.html nejsou
     seo = '\n'.join([
@@ -134,12 +136,18 @@ for lang, L in LANGS.items():
     if body.count('<!--lang-switch-->') != 1:
         sys.exit('page.html: chybí <!--lang-switch--> v hlavičce')
     body = body.replace('<!--lang-switch-->', nav)
+    if body.count('<!--nahled-->') != 1:
+        sys.exit('page.html: chybí <!--nahled--> v popisu generátoru')
+    body = body.replace('<!--nahled-->', f'<img class="about-shot" src="{SHOT}" width="1200" height="750" '
+                        f'alt="{escape(L["shot_alt"])}" loading="lazy" decoding="async">')
     doc = f"""<!doctype html>
 <html lang="{lang}">
 <head>
 <meta charset="utf-8">
 {L['base']}<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<link rel="icon" href="{favicon}">
+<link rel="icon" href="favicon.ico" sizes="48x48">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 {seo}
 <style>:root{{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}}body{{margin:0;font:14px system-ui,sans-serif}}img{{max-width:100%}}[hidden]{{display:none!important}}</style>
 <script src="consent.js"></script>
@@ -155,11 +163,14 @@ for lang, L in LANGS.items():
 
 today = datetime.date.today().isoformat()
 links = ''.join(f'\n    <xhtml:link rel="alternate" hreflang="{h}" href="{u}"/>' for h, u in ALT.items())
-urls = ''.join(f'\n  <url>\n    <loc>{L["url"]}</loc>\n    <lastmod>{today}</lastmod>{links}\n  </url>' for L in LANGS.values())
+images = lambda L: ''.join(f'\n    <image:image><image:loc>{SITE}{img}</image:loc></image:image>' for img in (SHOT, L['og']))
+urls = ''.join(f'\n  <url>\n    <loc>{L["url"]}</loc>\n    <lastmod>{today}</lastmod>{links}{images(L)}\n  </url>'
+               for L in LANGS.values())
 open('dist/sitemap.xml', 'w').write('<?xml version="1.0" encoding="UTF-8"?>\n'
-    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">'
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml"'
+    ' xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">'
     f'{urls}\n</urlset>\n')
 open('dist/robots.txt', 'w').write(f'User-agent: *\nAllow: /\n\nSitemap: {SITE}sitemap.xml\n')
 EOF
-cp consent.js feedback.js og.png og-en.png i18n.js gen.js symbols.js split.js export.js worker.js manifold.js manifold.wasm manifold-LICENSE.txt dist/
+cp consent.js feedback.js og.png og-en.png nahled.webp favicon.svg favicon.ico apple-touch-icon.png i18n.js gen.js symbols.js split.js export.js worker.js manifold.js manifold.wasm manifold-LICENSE.txt dist/
 echo "dist/ připraven: $(du -sh dist | cut -f1)"

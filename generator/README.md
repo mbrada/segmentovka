@@ -89,10 +89,15 @@ Stránka je česky a anglicky, obě verze skládá `build.sh` z jedné `page.htm
 - `zpetna-vazba/` – služba za tím formulářem (Python, jen standardní knihovna), viz Zpětná vazba níže
 - `manifold.js`, `manifold.wasm` – manifold-3d 3.5.4 (Apache-2.0, `manifold-LICENSE.txt`)
 - `build.sh` – složí samostatný web do `dist/` (česky) a `dist/en/` (anglicky); přidá SEO hlavičku
-  (canonical, hreflang, Open Graph, JSON-LD WebApplication z `<title>` a description), `robots.txt`
-  a `sitemap.xml`
+  (canonical, hreflang, Open Graph, ikony, JSON-LD WebSite s názvem webu a WebApplication z `<title>`
+  a description), obrázek 3D náhledu místo `<!--nahled-->` v popisu generátoru, `robots.txt`
+  a `sitemap.xml` s obrázky
 - `og.png`, `og-en.png` – náhled odkazu 1200 × 630; vzniká z `tools/og.mjs` (displej z generátoru,
   `node tools/og.mjs og-en.svg en` pro anglický) přes Inkscape
+- `nahled.webp` – obrázek 3D náhledu pouzdra 88:88 v popisu generátoru (Google z něj bere náhled
+  do výsledků hledání); vyfotí ho `tools/nahled.mjs` z běžícího webu, postup je v hlavičce skriptu
+- `favicon.svg`, `favicon.ico` (16, 32, 48 px), `apple-touch-icon.png` – ikona webu, červený segment;
+  Google chce ikonu jako samostatný čtvercový soubor, vloženou `data:` URI nepoužije
 
 Nasazení a konfigurace serveru nejsou součástí repozitáře (autor je má v soukromé složce `provoz/`,
 kterou `.gitignore` vynechává). Web je statický – stačí obsah `dist/` na libovolném HTTP serveru;
